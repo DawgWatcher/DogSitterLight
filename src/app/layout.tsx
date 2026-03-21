@@ -1,17 +1,23 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata, Viewport } from 'next';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "Book with ThePupPad",
-  description: "Kennel-free dog boarding & pet care — book your pup's stay",
+  title: 'Book — The Pup Pad',
+  description: 'Kennel-free dog boarding and pet care in Central New Jersey. Book your visit.',
+  robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen">
-        {children}
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

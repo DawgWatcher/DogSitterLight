@@ -100,3 +100,22 @@ export const ADDONS = {
 
 export type ServiceKey = keyof typeof SERVICES;
 export type AddonKey = keyof typeof ADDONS;
+
+/* ── Form-friendly list (BookingForm only — route.ts/calendar.ts don't use these) ── */
+export interface ServiceOption {
+  id: ServiceKey;
+  label: string;
+  price: number;
+  unit: string;
+  popular?: boolean;
+}
+
+export const SERVICE_OPTIONS: ServiceOption[] = [
+  { id: "boarding", label: "Boarding", price: SERVICES.boarding.price, unit: SERVICES.boarding.unit, popular: true },
+  { id: "daycare", label: "Daycare", price: SERVICES.daycare.price, unit: SERVICES.daycare.unit },
+  { id: "walking_30", label: "Dog Walking 30 min", price: SERVICES.walking_30.price, unit: SERVICES.walking_30.unit },
+  { id: "walking_60", label: "Dog Walking 60 min", price: SERVICES.walking_60.price, unit: SERVICES.walking_60.unit },
+  { id: "inhome_30", label: "In-Home Visit 30 min", price: SERVICES.inhome_30.price, unit: SERVICES.inhome_30.unit },
+  { id: "inhome_60", label: "In-Home Visit 60 min", price: SERVICES.inhome_60.price, unit: SERVICES.inhome_60.unit },
+  { id: "meet_greet", label: "Meet & Greet", price: SERVICES.meet_greet.price, unit: "30 min · free" },
+];

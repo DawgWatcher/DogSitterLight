@@ -1,669 +1,598 @@
-"use client";
+'use client';
 
-import { useState, useCallback } from "react";
-import { SERVICES, ADDONS, ServiceKey } from "@/lib/pricing";
-import type { ClientInfo, DogEntry, BookingState, CartSummary, CartLineItem } from "@/lib/types";
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { SERVICES, ADDONS, SERVICE_OPTIONS, type ServiceKey } from '@/lib/pricing';
+import type { BookingPayload, DogEntry, ClientInfo, CartSummary, CartLineItem } from '@/lib/types';
 
-// ── Helpers ───────────────────────────────────────────────────
-function uuid(): string {
-  return Math.random().toString(36).slice(2, 10);
+/* ── Design Tokens (60/30/10) ── */
+const T = {
+  white: '#FFFFFF',
+  cream: '#F2F0E6',
+  gold: '#FFCA4B',
+  espresso: '#2C1F14',
+  muted: 'rgba(44,31,20,0.45)',
+  light: 'rgba(44,31,20,0.28)',
+  border: 'rgba(44,31,20,0.08)',
+} as const;
+
+const SECTIONS = [
+  { id: 'you', label: 'you' },
+  { id: 'dog', label: 'dog' },
+  { id: 'service', label: 'service' },
+  { id: 'extras', label: 'extras' },
+  { id: 'review', label: 'review' },
+] as const;
+
+/* ── Helpers ── */
+
+let dogCounter = 0;
+function nextDogId(): string {
+  dogCounter += 1;
+  return `dog-${Date.now()}-${dogCounter}`;
 }
 
-function emptyDog(): DogEntry {
+function createDog(): DogEntry {
   return {
-    id: uuid(),
-    name: "",
-    service: "",
-    dropoffDate: "",
-    dropoffTime: "",
-    pickupDate: "",
-    pickupTime: "",
-    daycareDate: "",
-    daycareDropoffTime: "",
-    daycarePickupTime: "",
-    appointmentDate: "",
-    appointmentTime: "",
+    id: nextDogId(),
+    name: '',
+    service: '',
+    dropoffDate: '',
+    dropoffTime: '',
+    pickupDate: '',
+    pickupTime: '',
+    daycareDate: '',
+    daycareDropoffTime: '',
+    daycarePickupTime: '',
+    appointmentDate: '',
+    appointmentTime: '',
     bath: false,
   };
 }
 
-function calculateCart(state: BookingState): CartSummary {
-  const lineItems: CartLineItem[] = state.dogs.map((dog) => {
-    const svc = SERVICES[dog.service as ServiceKey];
-    const servicePrice = svc?.price ?? 0;
-    const bathPrice = dog.bath ? ADDONS.bath.price : 0;
-    return {
-      dogName: dog.name,
-      service: svc?.label ?? "",
-      servicePrice,
-      bathPrice,
-    };
-  });
+function buildCart(dogs: DogEntry[], pickupService: boolean, dropoffService: boolean): CartSummary {
+  const lineItems: CartLineItem[] = dogs
+    .filter(d => d.service !== '')
+    .map(d => {
+      const svc = SERVICES[d.service as ServiceKey];
+      return {
+        dogName: d.name || 'Unnamed',
+        service: svc.label,
+        servicePrice: svc.price,
+        bathPrice: d.bath ? ADDONS.bath.price : 0,
+      };
+    });
 
   const subtotal = lineItems.reduce((sum, li) => sum + li.servicePrice + li.bathPrice, 0);
-  const pickupPrice = state.pickupService ? ADDONS.pickup.price : 0;
-  const dropoffPrice = state.dropoffService ? ADDONS.dropoff.price : 0;
-  const total = subtotal + pickupPrice + dropoffPrice;
+  const pickupPrice = pickupService ? ADDONS.pickup.price : 0;
+  const dropoffPrice = dropoffService ? ADDONS.dropoff.price : 0;
 
-  return { lineItems, subtotal, pickupPrice, dropoffPrice, total };
+  return {
+    lineItems,
+    subtotal,
+    pickupPrice,
+    dropoffPrice,
+    total: subtotal + pickupPrice + dropoffPrice,
+  };
 }
 
-const STEPS = [
-  { num: 1, label: "Your Info" },
-  { num: 2, label: "Dog Info" },
-  { num: 3, label: "Service" },
-  { num: 4, label: "Add-ons" },
-  { num: 5, label: "Review" },
-];
+/* ── Primitives ── */
 
-// ── Service Fields (extracted outside — receives props, stable identity) ──
-function ServiceFieldsBlock({ dog, updateDog }: { dog: DogEntry; updateDog: (dogId: string, updates: Partial<DogEntry>) => void }) {
-  if (!dog.service) return null;
-
-  if (dog.service === "boarding") {
-    return (
-      <div className="mt-4 space-y-3 bg-white rounded-lg p-4 border border-brand-100">
-        <p className="text-sm font-medium text-forest-700">Boarding Dates & Times</p>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Drop-off Date</label>
-            <input
-              type="date"
-              className="input-field text-sm"
-              value={dog.dropoffDate}
-              onChange={(e) => updateDog(dog.id, { dropoffDate: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Drop-off Time</label>
-            <input
-              type="time"
-              className="input-field text-sm"
-              value={dog.dropoffTime}
-              onChange={(e) => updateDog(dog.id, { dropoffTime: e.target.value })}
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Pickup Date</label>
-            <input
-              type="date"
-              className="input-field text-sm"
-              value={dog.pickupDate}
-              onChange={(e) => updateDog(dog.id, { pickupDate: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Pickup Time</label>
-            <input
-              type="time"
-              className="input-field text-sm"
-              value={dog.pickupTime}
-              onChange={(e) => updateDog(dog.id, { pickupTime: e.target.value })}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (dog.service === "daycare") {
-    return (
-      <div className="mt-4 space-y-3 bg-white rounded-lg p-4 border border-brand-100">
-        <p className="text-sm font-medium text-forest-700">Daycare Schedule</p>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Date</label>
-          <input
-            type="date"
-            className="input-field text-sm"
-            value={dog.daycareDate}
-            onChange={(e) => updateDog(dog.id, { daycareDate: e.target.value })}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Drop-off Time</label>
-            <input
-              type="time"
-              className="input-field text-sm"
-              value={dog.daycareDropoffTime}
-              onChange={(e) => updateDog(dog.id, { daycareDropoffTime: e.target.value })}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Pickup Time</label>
-            <input
-              type="time"
-              className="input-field text-sm"
-              value={dog.daycarePickupTime}
-              onChange={(e) => updateDog(dog.id, { daycarePickupTime: e.target.value })}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Walking, In-Home, Meet & Greet
-  const svc = SERVICES[dog.service as ServiceKey];
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mt-4 space-y-3 bg-white rounded-lg p-4 border border-brand-100">
-      <p className="text-sm font-medium text-forest-700">{svc.label} — When?</p>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Date</label>
-          <input
-            type="date"
-            className="input-field text-sm"
-            value={dog.appointmentDate}
-            onChange={(e) => updateDog(dog.id, { appointmentDate: e.target.value })}
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Start Time</label>
-          <input
-            type="time"
-            className="input-field text-sm"
-            value={dog.appointmentTime}
-            onChange={(e) => updateDog(dog.id, { appointmentTime: e.target.value })}
-          />
+    <div style={{
+      fontSize: 11, fontFamily: 'monospace', letterSpacing: '0.15em',
+      color: T.muted, textTransform: 'uppercase', marginBottom: 12,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function GoldDivider() {
+  return <div style={{ height: 1, background: T.gold, margin: '8px 0 28px', opacity: 0.4 }} />;
+}
+
+function FormField({
+  label, placeholder, type = 'text', value, onChange, onCream = false,
+}: {
+  label: string; placeholder: string; type?: string;
+  value: string; onChange: (val: string) => void; onCream?: boolean;
+}) {
+  const [focused, setFocused] = useState(false);
+  const borderIdle = onCream ? T.border : T.cream;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: 'block', fontSize: 12, fontFamily: 'monospace', color: T.muted, marginBottom: 6 }}>
+        {label}
+      </label>
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{
+          width: '100%', height: 46, borderRadius: 10,
+          border: `1.5px solid ${focused ? T.gold : borderIdle}`,
+          background: T.white, padding: '0 14px', fontSize: 15,
+          color: T.espresso, outline: 'none', boxSizing: 'border-box',
+          transition: 'border-color 0.2s',
+        }}
+      />
+    </div>
+  );
+}
+
+function ServiceCard({
+  label, price, unit, popular = false, selected, onSelect,
+}: {
+  label: string; price: number; unit: string;
+  popular?: boolean; selected: boolean; onSelect: () => void;
+}) {
+  return (
+    <div
+      onClick={onSelect}
+      style={{
+        background: selected ? T.white : T.cream,
+        border: selected ? `2px solid ${T.gold}` : '1.5px solid transparent',
+        borderRadius: 12, padding: '14px 16px',
+        display: 'flex', alignItems: 'center', gap: 12,
+        cursor: 'pointer', transition: 'all 0.15s',
+      }}
+    >
+      <div style={{
+        width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+        background: selected ? T.gold : 'transparent',
+        border: selected ? `2px solid ${T.gold}` : `1.5px solid ${T.light}`,
+      }} />
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 15, color: T.espresso, fontWeight: selected ? 500 : 400 }}>{label}</span>
+        {popular && (
+          <span style={{
+            background: T.gold, color: T.espresso, fontSize: 9,
+            fontFamily: 'monospace', padding: '3px 8px', borderRadius: 6,
+            letterSpacing: '0.08em', textTransform: 'uppercase',
+          }}>Popular</span>
+        )}
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <span style={{ fontFamily: 'Georgia, serif', fontSize: 17, color: selected ? T.espresso : T.muted }}>
+          {price === 0 ? 'Free' : `$${price}`}
+        </span>
+        <div style={{ fontSize: 10, fontFamily: 'monospace', color: T.light }}>{unit}</div>
+      </div>
+    </div>
+  );
+}
+
+function ToggleCard({
+  label, subtitle, price, checked, onToggle,
+}: {
+  label: string; subtitle: string; price: number;
+  checked: boolean; onToggle: () => void;
+}) {
+  return (
+    <div
+      onClick={onToggle}
+      style={{
+        background: checked ? T.white : T.cream,
+        border: checked ? `2px solid ${T.gold}` : '1.5px solid transparent',
+        borderRadius: 12, padding: 16,
+        display: 'flex', alignItems: 'center', gap: 14,
+        cursor: 'pointer', transition: 'all 0.15s', marginBottom: 8,
+      }}
+    >
+      <div style={{
+        width: 22, height: 22, borderRadius: 6, flexShrink: 0,
+        border: `1.5px solid ${checked ? T.gold : T.light}`,
+        background: checked ? T.gold : T.white,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {checked && (
+          <svg width="12" height="12" viewBox="0 0 12 12">
+            <path d="M2 6l3 3 5-5" stroke={T.espresso} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 15, color: T.espresso, fontWeight: checked ? 500 : 400 }}>{label}</div>
+        <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{subtitle}</div>
+      </div>
+      <span style={{ fontFamily: 'Georgia, serif', fontSize: 17, color: checked ? T.espresso : T.muted }}>${price}</span>
+    </div>
+  );
+}
+
+function ProgressNav({ activeIndex, scrollPercent }: { activeIndex: number; scrollPercent: number }) {
+  return (
+    <div style={{
+      flexShrink: 0, background: T.white, padding: '0 24px 12px',
+      borderBottom: `1px solid ${T.cream}`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 2, background: T.cream, transform: 'translateY(-50%)', borderRadius: 1 }} />
+        <div style={{ position: 'absolute', top: '50%', left: 0, height: 2, background: T.gold, transform: 'translateY(-50%)', borderRadius: 1, width: `${scrollPercent}%`, transition: 'width 0.3s ease' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', position: 'relative', zIndex: 2 }}>
+          {SECTIONS.map((s, i) => (
+            <div key={s.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <div style={{
+                width: 10, height: 10, borderRadius: '50%', transition: 'all 0.3s',
+                background: i <= activeIndex ? T.gold : T.white,
+                border: `2px solid ${i <= activeIndex ? T.gold : T.cream}`,
+                boxShadow: i === activeIndex ? '0 0 0 3px rgba(255,202,75,0.25)' : 'none',
+              }} />
+              <span style={{
+                fontSize: 9, fontFamily: 'monospace', whiteSpace: 'nowrap',
+                color: i <= activeIndex ? T.espresso : T.light,
+                transition: 'color 0.3s',
+              }}>{s.label}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 }
 
-// ── Main Component ────────────────────────────────────────────
+/* ── Main Component ── */
+
 export default function BookingForm() {
-  const [step, setStep] = useState(1);
-  const [submitting, setSubmitting] = useState(false);
+  const [client, setClient] = useState<ClientInfo>({ name: '', email: '', phone: '' });
+  const [dogs, setDogs] = useState<DogEntry[]>([createDog()]);
+  const [pickupService, setPickupService] = useState(false);
+  const [dropoffService, setDropoffService] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState(0);
+  const [scrollPct, setScrollPct] = useState(0);
 
-  const [state, setState] = useState<BookingState>({
-    client: { name: "", email: "", phone: "" },
-    dogs: [emptyDog()],
-    pickupService: false,
-    dropoffService: false,
-  });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // ── State updaters ──────────────────────────────────────────
-  const updateClient = useCallback((field: keyof ClientInfo, value: string) => {
-    setState((prev) => ({
-      ...prev,
-      client: { ...prev.client, [field]: value },
-    }));
-  }, []);
-
-  const updateDog = useCallback((dogId: string, updates: Partial<DogEntry>) => {
-    setState((prev) => ({
-      ...prev,
-      dogs: prev.dogs.map((d) => (d.id === dogId ? { ...d, ...updates } : d)),
-    }));
+  const updateDog = useCallback((idx: number, field: keyof DogEntry, value: string | boolean) => {
+    setDogs(prev => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
   }, []);
 
   const addDog = useCallback(() => {
-    setState((prev) => ({ ...prev, dogs: [...prev.dogs, emptyDog()] }));
+    setDogs(prev => [...prev, createDog()]);
   }, []);
 
-  const removeDog = useCallback((dogId: string) => {
-    setState((prev) => ({
-      ...prev,
-      dogs: prev.dogs.filter((d) => d.id !== dogId),
-    }));
+  const cart = buildCart(dogs, pickupService, dropoffService);
+
+  /* Scroll spy */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const st = el.scrollTop;
+      const sh = el.scrollHeight - el.clientHeight;
+      setScrollPct(sh > 0 ? (st / sh) * 100 : 0);
+      const viewMid = el.clientHeight * 0.35;
+      let cur = 0;
+      for (let i = sectionRefs.current.length - 1; i >= 0; i--) {
+        const ref = sectionRefs.current[i];
+        if (ref && ref.getBoundingClientRect().top - el.getBoundingClientRect().top < viewMid) {
+          cur = i;
+          break;
+        }
+      }
+      setActiveSection(cur);
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
   }, []);
 
-  // ── Validation ──────────────────────────────────────────────
-  const canProceed = (): boolean => {
-    switch (step) {
-      case 1:
-        return !!(state.client.name && state.client.email && state.client.phone);
-      case 2:
-        return state.dogs.every((d) => d.name.trim() !== "");
-      case 3:
-        return state.dogs.every((d) => {
-          if (!d.service) return false;
-          if (d.service === "boarding") {
-            return d.dropoffDate && d.dropoffTime && d.pickupDate && d.pickupTime;
-          }
-          if (d.service === "daycare") {
-            return d.daycareDate && d.daycareDropoffTime && d.daycarePickupTime;
-          }
-          // walking, in-home, m&g
-          return d.appointmentDate && d.appointmentTime;
-        });
-      case 4:
-        return true;
-      case 5:
-        return true;
-      default:
-        return false;
-    }
-  };
-
-  // ── Submit ──────────────────────────────────────────────────
+  /* Submit */
   const handleSubmit = async () => {
+    setError(null);
     setSubmitting(true);
-    setError("");
     try {
-      const cart = calculateCart(state);
-      const res = await fetch("/api/book", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          client: state.client,
-          dogs: state.dogs,
-          pickupService: state.pickupService,
-          dropoffService: state.dropoffService,
-          cart,
-        }),
+      const payload: BookingPayload = {
+        client,
+        dogs,
+        pickupService,
+        dropoffService,
+        cart,
+      };
+      const res = await fetch('/api/book', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Booking failed");
-      setSubmitted(true);
-    } catch (err: any) {
-      setError(err.message || "Something went wrong. Please try again.");
+      if (res.ok) {
+        setSubmitted(true);
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Something went wrong. Please try again.');
+      }
+    } catch {
+      setError('Could not connect. Please check your internet and try again.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ── Confirmation screen ─────────────────────────────────────
+  /* ── Confirmation Screen ── */
   if (submitted) {
     return (
-      <div className="card text-center py-12">
-        <div className="text-5xl mb-4">🐾</div>
-        <h2 className="font-display text-3xl font-bold text-forest-700 mb-3">
-          You&apos;re Booked!
+      <div style={{
+        minHeight: '100vh', background: T.white,
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', padding: '0 28px',
+      }}>
+        <div style={{
+          width: 64, height: 64, borderRadius: '50%', background: T.gold,
+          margin: '0 auto 20px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width="28" height="28" viewBox="0 0 28 28">
+            <path d="M7 14l5 5 9-9" stroke={T.espresso} strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 24, color: T.espresso, margin: '0 0 8px', fontWeight: 400 }}>
+          Booking received
         </h2>
-        <p className="text-gray-600 mb-2">
-          Your booking is on the calendar. We&apos;ll be in touch to confirm details.
+        <p style={{ fontSize: 14, color: T.muted, margin: '0 0 36px', lineHeight: 1.6, textAlign: 'center' }}>
+          We&apos;ll confirm your booking shortly.<br />Check your email for details.
         </p>
-        <p className="text-sm text-gray-500">
-          {state.dogs.map((d) => d.name).join(" & ")} — we can&apos;t wait to meet{" "}
-          {state.dogs.length > 1 ? "them" : "them"}!
-        </p>
+        <div style={{ background: T.cream, borderRadius: 14, padding: 20, textAlign: 'left', width: '100%', maxWidth: 340 }}>
+          <SectionLabel>what happens next</SectionLabel>
+          <div style={{ fontSize: 14, color: T.espresso, lineHeight: 1.9 }}>
+            1. Dave reviews your request<br />
+            2. You&apos;ll get a confirmation email<br />
+            3. Payment collected at drop-off
+          </div>
+        </div>
       </div>
     );
   }
 
-  // ── Cart for review step ────────────────────────────────────
-  const cart = calculateCart(state);
-
-  // ═══════════════════════════════════════════════════════════
-  // RENDER — all steps are plain JSX, not inner components
-  // ═══════════════════════════════════════════════════════════
+  /* ── Form ── */
   return (
-    <div>
-      {/* ── Step Indicator ── */}
-      <div className="flex items-center justify-between mb-8">
-        {STEPS.map((s, i) => (
-          <div key={s.num} className="flex items-center">
-            <div className="flex flex-col items-center">
-              <div
-                className={`step-badge ${
-                  step >= s.num
-                    ? "bg-forest-600 text-white"
-                    : "bg-gray-200 text-gray-500"
-                }`}
-              >
-                {step > s.num ? "✓" : s.num}
-              </div>
-              <span
-                className={`text-xs mt-1 hidden sm:block ${
-                  step >= s.num ? "text-forest-700 font-medium" : "text-gray-400"
-                }`}
-              >
-                {s.label}
-              </span>
-            </div>
-            {i < STEPS.length - 1 && (
-              <div
-                className={`w-8 sm:w-12 h-0.5 mx-1 ${
-                  step > s.num ? "bg-forest-500" : "bg-gray-200"
-                }`}
-              />
-            )}
-          </div>
-        ))}
+    <div style={{
+      maxWidth: 480, margin: '0 auto', minHeight: '100vh',
+      background: T.white, display: 'flex', flexDirection: 'column',
+    }}>
+      {/* Nav */}
+      <div style={{
+        height: 54, background: T.white, display: 'flex',
+        alignItems: 'flex-end', justifyContent: 'center',
+        paddingBottom: 10, flexShrink: 0,
+      }}>
+        <span style={{ fontFamily: 'Georgia, serif', fontSize: 16, color: T.espresso, letterSpacing: '0.02em' }}>
+          The Pup Pad
+        </span>
       </div>
 
-      {/* ═══ STEP 1 — CLIENT INFO ═══ */}
-      {step === 1 && (
-        <div className="card">
-          <h2 className="font-display text-2xl font-bold text-forest-800 mb-1">
-            Your Information
-          </h2>
-          <p className="text-gray-500 text-sm mb-6">Tell us about yourself</p>
+      <ProgressNav activeIndex={activeSection} scrollPercent={scrollPct} />
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="Jane Smith"
-                value={state.client.name}
-                onChange={(e) => updateClient("name", e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                className="input-field"
-                placeholder="jane@email.com"
-                value={state.client.email}
-                onChange={(e) => updateClient("email", e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-              <input
-                type="tel"
-                className="input-field"
-                placeholder="(908) 555-1234"
-                value={state.client.phone}
-                onChange={(e) => updateClient("phone", e.target.value)}
-              />
-            </div>
+      {/* Scrollable content */}
+      <div ref={scrollRef} className="scroll-hide" style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ padding: '20px 24px 28px' }}>
+
+          {/* ── Section 1: Client ── */}
+          <div ref={el => { sectionRefs.current[0] = el; }} style={{ marginBottom: 8 }}>
+            <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 24, color: T.espresso, margin: '0 0 6px', fontWeight: 400 }}>
+              Your information
+            </h2>
+            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>We&apos;ll use this to confirm your booking</p>
+            <SectionLabel>contact</SectionLabel>
+            <FormField label="Full name" placeholder="Jane Smith" value={client.name} onChange={v => setClient(p => ({ ...p, name: v }))} />
+            <FormField label="Email" placeholder="jane@email.com" type="email" value={client.email} onChange={v => setClient(p => ({ ...p, email: v }))} />
+            <FormField label="Phone" placeholder="(555) 123-4567" type="tel" value={client.phone} onChange={v => setClient(p => ({ ...p, phone: v }))} />
           </div>
-        </div>
-      )}
 
-      {/* ═══ STEP 2 — DOG INFO ═══ */}
-      {step === 2 && (
-        <div className="card">
-          <h2 className="font-display text-2xl font-bold text-forest-800 mb-1">
-            Your Dog{state.dogs.length > 1 ? "s" : ""}
-          </h2>
-          <p className="text-gray-500 text-sm mb-6">Who are we caring for?</p>
+          <GoldDivider />
 
-          <div className="space-y-4">
-            {state.dogs.map((dog, i) => (
-              <div key={dog.id} className="dog-card">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-semibold text-brand-700">
-                    Dog {i + 1}
-                  </span>
-                  {state.dogs.length > 1 && (
-                    <button
-                      className="text-sm text-red-500 hover:text-red-700"
-                      onClick={() => removeDog(dog.id)}
-                    >
-                      Remove
-                    </button>
-                  )}
+          {/* ── Section 2: Dogs ── */}
+          <div ref={el => { sectionRefs.current[1] = el; }} style={{ marginBottom: 8 }}>
+            <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 24, color: T.espresso, margin: '0 0 6px', fontWeight: 400 }}>
+              Your dog(s)
+            </h2>
+            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Tell us about your furry family</p>
+            {dogs.map((dog, idx) => (
+              <div key={dog.id} style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                  <SectionLabel>dog {idx + 1}</SectionLabel>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.gold }} />
                 </div>
-                <input
-                  type="text"
-                  className="input-field"
-                  placeholder="Dog's name (e.g., Max)"
-                  value={dog.name}
-                  onChange={(e) => updateDog(dog.id, { name: e.target.value })}
-                />
+                <FormField label="Dog name" placeholder="Buddy" onCream value={dog.name} onChange={v => updateDog(idx, 'name', v)} />
               </div>
             ))}
+            <button
+              onClick={addDog}
+              type="button"
+              style={{
+                width: '100%', height: 44, borderRadius: 10,
+                border: `1.5px dashed ${T.light}`, background: 'transparent',
+                color: T.muted, fontSize: 13, fontFamily: 'monospace', cursor: 'pointer',
+              }}
+            >+ add another dog</button>
           </div>
 
-          <button className="btn-secondary w-full mt-4" onClick={addDog}>
-            + Add Another Dog
-          </button>
-        </div>
-      )}
+          <GoldDivider />
 
-      {/* ═══ STEP 3 — SERVICE SELECTION ═══ */}
-      {step === 3 && (
-        <div className="card">
-          <h2 className="font-display text-2xl font-bold text-forest-800 mb-1">
-            Choose a Service
-          </h2>
-          <p className="text-gray-500 text-sm mb-6">
-            Select a service{state.dogs.length > 1 ? " for each dog" : ""}
-          </p>
+          {/* ── Section 3: Services ── */}
+          <div ref={el => { sectionRefs.current[2] = el; }} style={{ marginBottom: 8 }}>
+            <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 24, color: T.espresso, margin: '0 0 6px', fontWeight: 400 }}>
+              Choose a service
+            </h2>
+            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>
+              {dogs.length === 1
+                ? `Select a service for ${dogs[0].name || 'your dog'}`
+                : 'Select a service per dog'}
+            </p>
 
-          <div className="space-y-6">
-            {state.dogs.map((dog) => (
-              <div key={dog.id} className="dog-card">
-                <p className="font-semibold text-brand-700 mb-3">
-                  {dog.name || "Unnamed Dog"}
-                </p>
-                <select
-                  className="select-field"
-                  value={dog.service}
-                  onChange={(e) => updateDog(dog.id, { service: e.target.value as ServiceKey })}
-                >
-                  <option value="">Select a service...</option>
-                  {Object.entries(SERVICES).map(([key, svc]) => (
-                    <option key={key} value={key}>
-                      {svc.label} — {svc.price === 0 ? "Free" : `$${svc.price} ${svc.unit}`}
-                    </option>
+            {dogs.map((dog, idx) => (
+              <div key={dog.id} style={{ marginBottom: dogs.length > 1 ? 24 : 0 }}>
+                {dogs.length > 1 && <SectionLabel>{dog.name || `dog ${idx + 1}`}</SectionLabel>}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+                  {SERVICE_OPTIONS.map(opt => (
+                    <ServiceCard
+                      key={opt.id}
+                      label={opt.label}
+                      price={opt.price}
+                      unit={opt.unit}
+                      popular={opt.popular}
+                      selected={dog.service === opt.id}
+                      onSelect={() => updateDog(idx, 'service', opt.id)}
+                    />
                   ))}
-                </select>
-                <ServiceFieldsBlock dog={dog} updateDog={updateDog} />
+                </div>
+
+                {/* Boarding: drop-off date/time + pickup date/time */}
+                {dog.service === 'boarding' && (
+                  <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
+                    <SectionLabel>boarding dates</SectionLabel>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                      <FormField label="Drop-off date" placeholder="" type="date" onCream value={dog.dropoffDate} onChange={v => updateDog(idx, 'dropoffDate', v)} />
+                      <FormField label="Drop-off time" placeholder="" type="time" onCream value={dog.dropoffTime} onChange={v => updateDog(idx, 'dropoffTime', v)} />
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <FormField label="Pickup date" placeholder="" type="date" onCream value={dog.pickupDate} onChange={v => updateDog(idx, 'pickupDate', v)} />
+                      <FormField label="Pickup time" placeholder="" type="time" onCream value={dog.pickupTime} onChange={v => updateDog(idx, 'pickupTime', v)} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Daycare: single date + drop-off time + pickup time */}
+                {dog.service === 'daycare' && (
+                  <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
+                    <SectionLabel>daycare times</SectionLabel>
+                    <FormField label="Date" placeholder="" type="date" onCream value={dog.daycareDate} onChange={v => updateDog(idx, 'daycareDate', v)} />
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <FormField label="Drop-off time" placeholder="" type="time" onCream value={dog.daycareDropoffTime} onChange={v => updateDog(idx, 'daycareDropoffTime', v)} />
+                      <FormField label="Pickup time" placeholder="" type="time" onCream value={dog.daycarePickupTime} onChange={v => updateDog(idx, 'daycarePickupTime', v)} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Walking / In-Home / Meet & Greet: date + time */}
+                {dog.service !== '' && dog.service !== 'boarding' && dog.service !== 'daycare' && (
+                  <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
+                    <SectionLabel>appointment</SectionLabel>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <FormField label="Date" placeholder="" type="date" onCream value={dog.appointmentDate} onChange={v => updateDog(idx, 'appointmentDate', v)} />
+                      <FormField label="Time" placeholder="" type="time" onCream value={dog.appointmentTime} onChange={v => updateDog(idx, 'appointmentTime', v)} />
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
-        </div>
-      )}
 
-      {/* ═══ STEP 4 — ADD-ONS ═══ */}
-      {step === 4 && (
-        <div className="card">
-          <h2 className="font-display text-2xl font-bold text-forest-800 mb-1">
-            Add-ons
-          </h2>
-          <p className="text-gray-500 text-sm mb-6">Optional extras for your booking</p>
+          <GoldDivider />
 
-          {/* Bath — per dog */}
-          <div className="mb-6">
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
-              Bath — ${ADDONS.bath.price} per dog
-            </h3>
-            <div className="space-y-3">
-              {state.dogs.map((dog) => (
-                <label
-                  key={dog.id}
-                  className="flex items-center gap-3 p-3 rounded-xl bg-brand-50 border border-brand-100 cursor-pointer hover:border-forest-300 transition-colors"
-                >
-                  <input
-                    type="checkbox"
-                    className="checkbox-field"
-                    checked={dog.bath}
-                    onChange={(e) => updateDog(dog.id, { bath: e.target.checked })}
-                  />
-                  <span className="text-gray-800">
-                    Bath for <span className="font-semibold">{dog.name || "unnamed"}</span>
-                  </span>
-                  <span className="ml-auto text-sm text-gray-500">${ADDONS.bath.price}</span>
-                </label>
+          {/* ── Section 4: Add-ons ── */}
+          <div ref={el => { sectionRefs.current[3] = el; }} style={{ marginBottom: 8 }}>
+            <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 24, color: T.espresso, margin: '0 0 6px', fontWeight: 400 }}>
+              Add-ons
+            </h2>
+            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Extras to pamper your pup</p>
+            <SectionLabel>per dog</SectionLabel>
+            {dogs.map((dog, idx) => (
+              <ToggleCard
+                key={dog.id}
+                label={`Bath${dog.name ? ` for ${dog.name}` : ''}`}
+                subtitle={`$${ADDONS.bath.price} per dog`}
+                price={ADDONS.bath.price}
+                checked={dog.bath}
+                onToggle={() => updateDog(idx, 'bath', !dog.bath)}
+              />
+            ))}
+            <div style={{ height: 1, background: T.cream, margin: '24px 0' }} />
+            <SectionLabel>per booking</SectionLabel>
+            <ToggleCard label="Pickup" subtitle={`$${ADDONS.pickup.price} per booking`} price={ADDONS.pickup.price} checked={pickupService} onToggle={() => setPickupService(p => !p)} />
+            <ToggleCard label="Dropoff" subtitle={`$${ADDONS.dropoff.price} per booking`} price={ADDONS.dropoff.price} checked={dropoffService} onToggle={() => setDropoffService(p => !p)} />
+          </div>
+
+          <GoldDivider />
+
+          {/* ── Section 5: Review ── */}
+          <div ref={el => { sectionRefs.current[4] = el; }} style={{ marginBottom: 28 }}>
+            <h2 style={{ fontFamily: 'Georgia, serif', fontSize: 24, color: T.espresso, margin: '0 0 6px', fontWeight: 400 }}>
+              Review & confirm
+            </h2>
+            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Everything look right?</p>
+            <div style={{ background: T.cream, borderRadius: 14, padding: 20 }}>
+              <SectionLabel>booking summary</SectionLabel>
+
+              {cart.lineItems.map((li, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+                  <div style={{
+                    width: 42, height: 42, borderRadius: '50%', background: T.white,
+                    border: `1.5px solid ${T.border}`, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', fontFamily: 'Georgia, serif', fontSize: 17, color: T.espresso,
+                  }}>
+                    {li.dogName[0].toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, color: T.espresso, fontWeight: 500 }}>{li.dogName}</div>
+                    <div style={{ fontSize: 12, color: T.muted }}>{li.service}</div>
+                  </div>
+                  <div style={{ fontFamily: 'Georgia, serif', fontSize: 18, color: T.espresso }}>
+                    {li.servicePrice === 0 ? 'Free' : `$${li.servicePrice}`}
+                  </div>
+                </div>
               ))}
-            </div>
-          </div>
 
-          {/* Transportation — per booking */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">
-              Transportation — per booking
-            </h3>
-            <div className="space-y-3">
-              <label className="flex items-center gap-3 p-3 rounded-xl bg-brand-50 border border-brand-100 cursor-pointer hover:border-forest-300 transition-colors">
-                <input
-                  type="checkbox"
-                  className="checkbox-field"
-                  checked={state.pickupService}
-                  onChange={(e) =>
-                    setState((prev) => ({ ...prev, pickupService: e.target.checked }))
-                  }
-                />
-                <div>
-                  <span className="text-gray-800 font-medium">Pickup</span>
-                  <span className="block text-xs text-gray-500">We come get your pup</span>
-                </div>
-                <span className="ml-auto text-sm text-gray-500">${ADDONS.pickup.price}</span>
-              </label>
+              {cart.lineItems.length === 0 && (
+                <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>No services selected yet</div>
+              )}
 
-              <label className="flex items-center gap-3 p-3 rounded-xl bg-brand-50 border border-brand-100 cursor-pointer hover:border-forest-300 transition-colors">
-                <input
-                  type="checkbox"
-                  className="checkbox-field"
-                  checked={state.dropoffService}
-                  onChange={(e) =>
-                    setState((prev) => ({ ...prev, dropoffService: e.target.checked }))
-                  }
-                />
-                <div>
-                  <span className="text-gray-800 font-medium">Dropoff</span>
-                  <span className="block text-xs text-gray-500">We bring your pup home</span>
-                </div>
-                <span className="ml-auto text-sm text-gray-500">${ADDONS.dropoff.price}</span>
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
+              <div style={{ height: 1, background: T.border, margin: '0 0 12px' }} />
 
-      {/* ═══ STEP 5 — REVIEW ═══ */}
-      {step === 5 && (
-        <div className="card">
-          <h2 className="font-display text-2xl font-bold text-forest-800 mb-1">
-            Review Your Booking
-          </h2>
-          <p className="text-gray-500 text-sm mb-6">
-            Make sure everything looks good
-          </p>
-
-          {/* Client info */}
-          <div className="mb-6 pb-4 border-b border-brand-100">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-              Your Info
-            </h3>
-            <p className="text-gray-800 font-medium">{state.client.name}</p>
-            <p className="text-sm text-gray-600">{state.client.email}</p>
-            <p className="text-sm text-gray-600">{state.client.phone}</p>
-          </div>
-
-          {/* Dogs & services */}
-          <div className="mb-6 pb-4 border-b border-brand-100">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              Services
-            </h3>
-            <div className="space-y-3">
-              {state.dogs.map((dog) => {
-                const svc = SERVICES[dog.service as ServiceKey];
-                return (
-                  <div key={dog.id} className="bg-brand-50 rounded-xl p-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold text-gray-800">{dog.name}</p>
-                        <p className="text-sm text-gray-600">{svc?.label}</p>
-                        {dog.service === "boarding" && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Drop-off: {dog.dropoffDate} at {dog.dropoffTime}
-                            <br />
-                            Pickup: {dog.pickupDate} at {dog.pickupTime}
-                          </p>
-                        )}
-                        {dog.service === "daycare" && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {dog.daycareDate} — {dog.daycareDropoffTime} to {dog.daycarePickupTime}
-                          </p>
-                        )}
-                        {!["boarding", "daycare", ""].includes(dog.service) && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            {dog.appointmentDate} at {dog.appointmentTime}
-                          </p>
-                        )}
-                        {dog.bath && (
-                          <span className="inline-block mt-1 text-xs bg-forest-100 text-forest-700 px-2 py-0.5 rounded-full">
-                            + Bath
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-forest-700 font-semibold">
-                        ${svc?.price ?? 0}
-                      </p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Price breakdown */}
-          <div>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-              Price Breakdown
-            </h3>
-            <div className="space-y-2 text-sm">
-              {cart.lineItems.map((li, i) => (
-                <div key={i}>
-                  <div className="flex justify-between text-gray-700">
-                    <span>{li.dogName} — {li.service}</span>
-                    <span>${li.servicePrice}</span>
-                  </div>
-                  {li.bathPrice > 0 && (
-                    <div className="flex justify-between text-gray-500 pl-4">
-                      <span>Bath</span>
-                      <span>${li.bathPrice}</span>
-                    </div>
-                  )}
+              {cart.lineItems.filter(li => li.bathPrice > 0).map((li, idx) => (
+                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+                  <span style={{ color: T.muted }}>Bath — {li.dogName}</span>
+                  <span style={{ color: T.espresso }}>${li.bathPrice}</span>
                 </div>
               ))}
               {cart.pickupPrice > 0 && (
-                <div className="flex justify-between text-gray-700">
-                  <span>Pickup</span>
-                  <span>${cart.pickupPrice}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+                  <span style={{ color: T.muted }}>Pickup</span>
+                  <span style={{ color: T.espresso }}>${cart.pickupPrice}</span>
                 </div>
               )}
               {cart.dropoffPrice > 0 && (
-                <div className="flex justify-between text-gray-700">
-                  <span>Dropoff</span>
-                  <span>${cart.dropoffPrice}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+                  <span style={{ color: T.muted }}>Dropoff</span>
+                  <span style={{ color: T.espresso }}>${cart.dropoffPrice}</span>
                 </div>
               )}
-              <div className="flex justify-between text-lg font-bold text-forest-800 pt-2 border-t border-brand-200">
-                <span>Total</span>
-                <span>${cart.total}</span>
+
+              <div style={{ height: 1, background: T.border, margin: '14px 0' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ fontSize: 11, fontFamily: 'monospace', color: T.muted, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Total</span>
+                <span style={{ fontFamily: 'Georgia, serif', fontSize: 28, color: T.espresso, fontWeight: 400 }}>${cart.total}</span>
               </div>
             </div>
           </div>
 
-          {error && (
-            <div className="mt-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm">
-              {error}
-            </div>
-          )}
         </div>
-      )}
+      </div>
 
-      {/* ── Navigation Buttons ── */}
-      <div className="flex justify-between mt-8">
-        {step > 1 ? (
-          <button className="btn-ghost" onClick={() => setStep(step - 1)}>
-            ← Back
-          </button>
-        ) : (
-          <div />
+      {/* Sticky CTA */}
+      <div style={{ flexShrink: 0, padding: '12px 24px 28px', background: T.white, borderTop: `1px solid ${T.cream}` }}>
+        {error && (
+          <div style={{ fontSize: 13, color: '#b91c1c', marginBottom: 10, textAlign: 'center' }}>{error}</div>
         )}
-        {step < 5 ? (
-          <button
-            className="btn-primary"
-            disabled={!canProceed()}
-            onClick={() => setStep(step + 1)}
-          >
-            Continue →
-          </button>
-        ) : (
-          <button
-            className="btn-primary"
-            disabled={submitting}
-            onClick={handleSubmit}
-          >
-            {submitting ? "Booking..." : "Confirm Booking"}
-          </button>
-        )}
+        <button
+          onClick={handleSubmit}
+          disabled={submitting}
+          type="button"
+          style={{
+            width: '100%', height: 52, borderRadius: 12,
+            background: T.gold, color: T.espresso, fontWeight: 600,
+            fontSize: 15, border: 'none', cursor: submitting ? 'wait' : 'pointer',
+            boxShadow: '0 2px 12px rgba(255,202,75,0.3)',
+            fontFamily: 'Georgia, serif', letterSpacing: '0.02em',
+            opacity: submitting ? 0.6 : 1, transition: 'opacity 0.2s',
+          }}
+        >
+          {submitting ? 'Submitting...' : 'Submit booking'}
+        </button>
       </div>
     </div>
   );
