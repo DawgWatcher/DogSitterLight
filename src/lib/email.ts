@@ -136,7 +136,7 @@ export async function sendClientConfirmation(payload: BookingPayload) {
 </html>`;
 
     await resend.emails.send({
-      from: "ThePupPad <onboarding@resend.dev>",
+      from: "ThePupPad <bookings@thepuppad.com>",
       to: client.email,
       subject: "Your ThePupPad Booking is Confirmed!",
       html,
@@ -203,7 +203,7 @@ export async function sendOperatorAlert(payload: BookingPayload) {
     lines.push(`TOTAL: $${cart.total}`);
 
     await resend.emails.send({
-      from: "ThePupPad <onboarding@resend.dev>",
+      from: "ThePupPad <bookings@thepuppad.com>",
       to: operatorEmail,
       subject: `New Booking: ${dogNames} – ${svcLabel} (${client.name})`,
       text: lines.join("\n"),
