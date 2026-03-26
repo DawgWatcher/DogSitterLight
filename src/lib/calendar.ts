@@ -15,9 +15,6 @@ function getCalendarClient() {
 const CALENDAR_ID = process.env.GOOGLE_CALENDAR_ID!;
 const TIMEZONE = "America/New_York";
 
-// ── Notification feature flag ─────────────────────────────────
-const notificationsEnabled = process.env.ENABLE_NOTIFICATIONS === "true";
-
 // ── Description header ────────────────────────────────────────
 const DESCRIPTION_HEADER = `Your booking with ThePupPad is confirmed!
 This is a calendar hold for your appointment — no need to RSVP.
@@ -25,15 +22,6 @@ This is a calendar hold for your appointment — no need to RSVP.
 ────────────────────────
 
 `;
-
-// ── Attendees builder ─────────────────────────────────────────
-function buildAttendees(clientEmail: string) {
-  if (!notificationsEnabled) return undefined;
-  return [
-    { email: clientEmail, responseStatus: "accepted" as const },
-    { email: process.env.OPERATOR_EMAIL!, responseStatus: "accepted" as const },
-  ];
-}
 
 // ── Description builder ───────────────────────────────────────
 function buildDescription(payload: BookingPayload): string {
@@ -94,7 +82,6 @@ function addMinutes(date: string, time: string, minutes: number): string {
 export async function createBookingEvents(payload: BookingPayload): Promise<string[]> {
   const cal = getCalendarClient();
   const description = buildDescription(payload);
-  const attendees = buildAttendees(payload.client.email);
   const createdIds: string[] = [];
 
   // Group dogs by service type for intelligent event creation
@@ -110,14 +97,13 @@ export async function createBookingEvents(payload: BookingPayload): Promise<stri
     const dogNames = boardingDogs.map((d) => d.name).join(" & ");
     const clientName = payload.client.name;
 
-    // 1. Drop-off (timed event) — sendUpdates: 'none' (silent)
+    // 1. Drop-off (timed event)
     const dropoffEvent = await cal.events.insert({
       calendarId: CALENDAR_ID,
       sendUpdates: "none",
       requestBody: {
         summary: `${dogNames} – Drop-off (${clientName})`,
         description,
-        ...(attendees && { attendees }),
         start: {
           dateTime: toISODateTime(ref.dropoffDate, ref.dropoffTime),
           timeZone: TIMEZONE,
@@ -131,18 +117,17 @@ export async function createBookingEvents(payload: BookingPayload): Promise<stri
     });
     createdIds.push(dropoffEvent.data.id!);
 
-    // 2. Overnight stay (all-day event) — sendUpdates: 'all' when enabled (the one notification per boarding)
+    // 2. Overnight stay (all-day event)
     const endDate = new Date(ref.pickupDate + "T00:00:00");
     endDate.setDate(endDate.getDate() + 1);
     const endDateStr = endDate.toISOString().split("T")[0];
 
     const stayEvent = await cal.events.insert({
       calendarId: CALENDAR_ID,
-      sendUpdates: notificationsEnabled ? "all" : "none",
+      sendUpdates: "none",
       requestBody: {
         summary: `${dogNames} – Boarding (${clientName})`,
         description,
-        ...(attendees && { attendees }),
         start: { date: ref.dropoffDate },
         end: { date: endDateStr },
         reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 1440 }] },
@@ -150,14 +135,13 @@ export async function createBookingEvents(payload: BookingPayload): Promise<stri
     });
     createdIds.push(stayEvent.data.id!);
 
-    // 3. Pickup (timed event) — sendUpdates: 'none' (silent)
+    // 3. Pickup (timed event)
     const pickupEvent = await cal.events.insert({
       calendarId: CALENDAR_ID,
       sendUpdates: "none",
       requestBody: {
         summary: `${dogNames} – Pickup (${clientName})`,
         description,
-        ...(attendees && { attendees }),
         start: {
           dateTime: toISODateTime(ref.pickupDate, ref.pickupTime),
           timeZone: TIMEZONE,
@@ -180,11 +164,10 @@ export async function createBookingEvents(payload: BookingPayload): Promise<stri
 
     const daycareEvent = await cal.events.insert({
       calendarId: CALENDAR_ID,
-      sendUpdates: notificationsEnabled ? "all" : "none",
+      sendUpdates: "none",
       requestBody: {
         summary: `${dogNames} – Daycare (${clientName})`,
         description,
-        ...(attendees && { attendees }),
         start: {
           dateTime: toISODateTime(ref.daycareDate, ref.daycareDropoffTime),
           timeZone: TIMEZONE,
@@ -207,11 +190,10 @@ export async function createBookingEvents(payload: BookingPayload): Promise<stri
 
     const event = await cal.events.insert({
       calendarId: CALENDAR_ID,
-      sendUpdates: notificationsEnabled ? "all" : "none",
+      sendUpdates: "none",
       requestBody: {
         summary: `${dog.name} – ${svc.label} (${clientName})`,
         description,
-        ...(attendees && { attendees }),
         start: {
           dateTime: toISODateTime(dog.appointmentDate, dog.appointmentTime),
           timeZone: TIMEZONE,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createBookingEvents } from "@/lib/calendar";
+import { sendClientConfirmation, sendOperatorAlert } from "@/lib/email";
 import { BookingPayload } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
@@ -23,6 +24,16 @@ export async function POST(req: NextRequest) {
     }
 
     const eventIds = await createBookingEvents(payload);
+
+    // Best-effort email notifications — never block the booking response
+    try {
+      await Promise.all([
+        sendClientConfirmation(payload),
+        sendOperatorAlert(payload),
+      ]);
+    } catch (emailErr) {
+      console.error("Email notification error (non-fatal):", emailErr);
+    }
 
     return NextResponse.json({
       success: true,
