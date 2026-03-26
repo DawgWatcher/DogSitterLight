@@ -238,10 +238,10 @@ function GoldDivider() {
 }
 
 function FormField({
-  label, placeholder, type = 'text', value, onChange, onCream = false,
+  label, placeholder, type = 'text', value, onChange, onCream = false, required = false,
 }: {
   label: string; placeholder: string; type?: string;
-  value: string; onChange: (val: string) => void; onCream?: boolean;
+  value: string; onChange: (val: string) => void; onCream?: boolean; required?: boolean;
 }) {
   const [focused, setFocused] = useState(false);
   const borderIdle = onCream ? T.border : T.cream;
@@ -254,6 +254,7 @@ function FormField({
         type={type}
         placeholder={placeholder}
         value={value}
+        required={required}
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
@@ -477,6 +478,38 @@ export default function BookingForm() {
   /* Submit */
   const handleSubmit = async () => {
     setError(null);
+
+    // Validate required date/time fields per dog
+    const missing: string[] = [];
+    for (let i = 0; i < dogs.length; i++) {
+      const dog = dogs[i];
+      const label = dog.name || `Dog ${i + 1}`;
+
+      if (!dog.service) {
+        missing.push(`${label}: please select a service`);
+        continue;
+      }
+
+      if (dog.service === 'boarding') {
+        if (!dog.dropoffDate) missing.push(`${label}: drop-off date`);
+        if (!dog.dropoffTime) missing.push(`${label}: drop-off time`);
+        if (!dog.pickupDate) missing.push(`${label}: pickup date`);
+        if (!dog.pickupTime) missing.push(`${label}: pickup time`);
+      } else if (dog.service === 'daycare') {
+        if (!dog.daycareDate) missing.push(`${label}: daycare date`);
+        if (!dog.daycareDropoffTime) missing.push(`${label}: drop-off time`);
+        if (!dog.daycarePickupTime) missing.push(`${label}: pickup time`);
+      } else {
+        if (!dog.appointmentDate) missing.push(`${label}: appointment date`);
+        if (!dog.appointmentTime) missing.push(`${label}: appointment time`);
+      }
+    }
+
+    if (missing.length > 0) {
+      setError(`Missing required fields: ${missing.join('; ')}`);
+      return;
+    }
+
     setSubmitting(true);
     try {
       const payload: BookingPayload = {
@@ -672,12 +705,12 @@ export default function BookingForm() {
                   <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
                     <SectionLabel>boarding dates</SectionLabel>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-                      <FormField label="Drop-off date" placeholder="" type="date" onCream value={dog.dropoffDate} onChange={v => updateDog(idx, 'dropoffDate', v)} />
-                      <FormField label="Drop-off time" placeholder="" type="time" onCream value={dog.dropoffTime} onChange={v => updateDog(idx, 'dropoffTime', v)} />
+                      <FormField label="Drop-off date" placeholder="" type="date" onCream required value={dog.dropoffDate} onChange={v => updateDog(idx, 'dropoffDate', v)} />
+                      <FormField label="Drop-off time" placeholder="" type="time" onCream required value={dog.dropoffTime} onChange={v => updateDog(idx, 'dropoffTime', v)} />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <FormField label="Pickup date" placeholder="" type="date" onCream value={dog.pickupDate} onChange={v => updateDog(idx, 'pickupDate', v)} />
-                      <FormField label="Pickup time" placeholder="" type="time" onCream value={dog.pickupTime} onChange={v => updateDog(idx, 'pickupTime', v)} />
+                      <FormField label="Pickup date" placeholder="" type="date" onCream required value={dog.pickupDate} onChange={v => updateDog(idx, 'pickupDate', v)} />
+                      <FormField label="Pickup time" placeholder="" type="time" onCream required value={dog.pickupTime} onChange={v => updateDog(idx, 'pickupTime', v)} />
                     </div>
                   </div>
                 )}
@@ -685,10 +718,10 @@ export default function BookingForm() {
                 {dog.service === 'daycare' && (
                   <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
                     <SectionLabel>daycare times</SectionLabel>
-                    <FormField label="Date" placeholder="" type="date" onCream value={dog.daycareDate} onChange={v => updateDog(idx, 'daycareDate', v)} />
+                    <FormField label="Date" placeholder="" type="date" onCream required value={dog.daycareDate} onChange={v => updateDog(idx, 'daycareDate', v)} />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <FormField label="Drop-off time" placeholder="" type="time" onCream value={dog.daycareDropoffTime} onChange={v => updateDog(idx, 'daycareDropoffTime', v)} />
-                      <FormField label="Pickup time" placeholder="" type="time" onCream value={dog.daycarePickupTime} onChange={v => updateDog(idx, 'daycarePickupTime', v)} />
+                      <FormField label="Drop-off time" placeholder="" type="time" onCream required value={dog.daycareDropoffTime} onChange={v => updateDog(idx, 'daycareDropoffTime', v)} />
+                      <FormField label="Pickup time" placeholder="" type="time" onCream required value={dog.daycarePickupTime} onChange={v => updateDog(idx, 'daycarePickupTime', v)} />
                     </div>
                   </div>
                 )}
@@ -697,8 +730,8 @@ export default function BookingForm() {
                   <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
                     <SectionLabel>appointment</SectionLabel>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <FormField label="Date" placeholder="" type="date" onCream value={dog.appointmentDate} onChange={v => updateDog(idx, 'appointmentDate', v)} />
-                      <FormField label="Time" placeholder="" type="time" onCream value={dog.appointmentTime} onChange={v => updateDog(idx, 'appointmentTime', v)} />
+                      <FormField label="Date" placeholder="" type="date" onCream required value={dog.appointmentDate} onChange={v => updateDog(idx, 'appointmentDate', v)} />
+                      <FormField label="Time" placeholder="" type="time" onCream required value={dog.appointmentTime} onChange={v => updateDog(idx, 'appointmentTime', v)} />
                     </div>
                   </div>
                 )}
@@ -811,7 +844,11 @@ export default function BookingForm() {
       {/* Sticky CTA */}
       <div style={{ flexShrink: 0, padding: '12px 24px 28px', background: T.white, borderTop: `1px solid ${T.cream}` }}>
         {error && (
-          <div style={{ fontSize: 13, color: '#b91c1c', marginBottom: 10, textAlign: 'center' }}>{error}</div>
+          <div style={{
+            fontSize: 13, color: T.espresso, marginBottom: 10, textAlign: 'center',
+            background: 'rgba(255,202,75,0.15)', border: `1px solid ${T.gold}`,
+            borderRadius: 10, padding: '10px 14px', lineHeight: 1.5,
+          }}>{error}</div>
         )}
         <button
           onClick={handleSubmit}
