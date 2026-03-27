@@ -2,7 +2,7 @@ import { Resend } from "resend";
 import { BookingPayload } from "./types";
 import { SERVICES, ServiceKey } from "./pricing";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResendClient() { return new Resend(process.env.RESEND_API_KEY); }
 
 // ── Client confirmation (branded HTML) ───────────────────────
 export async function sendClientConfirmation(payload: BookingPayload) {
@@ -135,7 +135,7 @@ export async function sendClientConfirmation(payload: BookingPayload) {
 </body>
 </html>`;
 
-    await resend.emails.send({
+    await getResendClient().emails.send({
       from: "ThePupPad <bookings@thepuppad.com>",
       to: client.email,
       subject: "Your ThePupPad Booking is Confirmed!",
@@ -202,7 +202,7 @@ export async function sendOperatorAlert(payload: BookingPayload) {
     if (cart.dropoffPrice > 0) lines.push(`Dropoff: $${cart.dropoffPrice}`);
     lines.push(`TOTAL: $${cart.total}`);
 
-    await resend.emails.send({
+    await getResendClient().emails.send({
       from: "ThePupPad <bookings@thepuppad.com>",
       to: operatorEmail,
       subject: `New Booking: ${dogNames} – ${svcLabel} (${client.name})`,
