@@ -1,10 +1,11 @@
 # Light Sitter Pro (LSP) v2.0 — Product Requirements Document
 
-**Version:** 2.0
-**Date:** 2026-03-26
+**Version:** 2.0.2
+**Date:** 2026-03-27
 **Repo:** `DawgWatcher/DogSitterLight` (puppad-bridge-form)
 **Live domain:** book.thepuppad.com
 **Vercel project:** dogsitterlight
+**Corrections applied:** ARGUS forensic audit 2026-03-27 (A1–A7), OQ1–OQ3 resolutions 2026-03-27
 
 ---
 
@@ -31,9 +32,9 @@
 
 ### What LSP v2.0 Is
 
-Light Sitter Pro (LSP) v2.0 is a **frontend restructure** that expands the existing LSP v1.0 single-page booking form into a **five-route mobile-first site**. The booking form moves from `/` to `/bookings` and receives five defined UI improvements. Four new routes are added: Home (`/`), Services (`/services`), Gallery (`/gallery`), and Contact (`/contact`).
+Light Sitter Pro (LSP) v2.0 is a **frontend-led expansion** that grows the existing LSP v1.0 single-page booking form into a **five-route mobile-first site** with **one new API endpoint** (`/api/contact`). The booking form moves from `/` to `/bookings` and receives five defined UI improvements. Four new routes are added: Home (`/`), Services (`/services`), Gallery (`/gallery`), and Contact (`/contact`).
 
-**LSP v2.0 is NOT a rewrite.** It is a controlled expansion with a strict change boundary. The backend pipeline is frozen except for two scoped additions to calendar event descriptions. The booking form is open for five defined UI changes and nothing else.
+**LSP v2.0 is NOT a rewrite.** It is a controlled expansion with a strict change boundary. The backend pipeline is frozen except for three scoped additions. The booking form is open for five defined UI changes and nothing else.
 
 ### What It Replaces
 
@@ -41,12 +42,15 @@ LSP v1.0 is a single-page, single-scroll booking form live at `book.thepuppad.co
 
 ### Change Boundary
 
-**Pipeline (`/api/book`, `calendar.ts`, `email.ts`, `types.ts`) — FROZEN with two scoped additions:**
+**Pipeline (`/api/book`, `calendar.ts`, `email.ts`, `types.ts`) — FROZEN with three scoped additions:**
 
 1. Meet & Greet events include format (virtual/in-person) and platform (FaceTime/WhatsApp) in the calendar event description.
 2. All booking events include a `Terms accepted: Yes` line in the calendar event description.
+3. `/api/book` rejects submissions where `terms_accepted` is not `true` (server-side validation gate).
 
 No other pipeline changes. Every API contract, every email trigger, every calendar write pattern is preserved exactly.
+
+**New API endpoint:** `/api/contact` — a new Resend-powered contact form handler. This is the only backend expansion in v2.0.
 
 **Booking form (`BookingForm.tsx`) — OPEN for five defined changes:**
 
@@ -56,11 +60,11 @@ No other pipeline changes. Every API contract, every email trigger, every calend
 4. Terms agreement gate
 5. Sticky step tracker with Intersection Observer active state
 
-**Everything outside these seven changes (5 form + 2 pipeline) is untouched.** All form fields, validation rules, cart calculations, tax calculations, and submission behavior not listed above are identical to v1.0.
+**Everything outside these eight changes (5 form + 3 pipeline) is untouched.** All form fields, validation rules, cart calculations, tax calculations, and submission behavior not listed above are identical to v1.0.
 
 ### Relationship to ThePupPad v3.0
 
-LSP has zero connection to the ppWAv3 repo, Airtable, Square, the write chain, or the Quick Booking Flow (QBF). Do not reference or import from any v3.0 architecture. LSP is a standalone product. v2.0 does not change this boundary.
+LSP has zero connection to the ppWAv3 repo, Airtable, Square, the write chain, or the Quick Booking Flow (QBF). Do not reference or import from any v3.0 architecture. LSP is an independent frontend system isolated from v3.0 architecture. v2.0 does not change this boundary.
 
 ### Entry Points
 
@@ -81,7 +85,7 @@ Form Submission → /api/book (route.ts) → calendar.ts → Google Calendar API
 ```
 
 **Calendar write behavior by service type (unchanged):**
-- **Boarding** creates **3 calendar events** per submission: one all-day event spanning the stay dates, one timed 30-min Drop-off event, and one timed 30-min Pickup event. All three carry the same description block.
+- **Boarding** creates **3 calendar events** per submission: one all-day event spanning the stay dates, one timed 30-min Drop-off event, and one timed 30-min Pickup event. All three carry the same description block. **Client confirmation email fires only for the all-day event** — the Drop-off and Pickup events are operator-facing calendar entries only.
 - **Meet & Greet** creates **1 calendar event** per submission.
 - **All other services** (Daycare, Walking, In-Home Visit) create **1 calendar event** per submission.
 
@@ -121,7 +125,7 @@ book.thepuppad.com
 │   ├── Contact info + social links
 │   └── "Send Us a Message" form
 └── /api
-    ├── /api/book     (existing — frozen)
+    ├── /api/book     (existing — frozen with 3 scoped additions)
     └── /api/contact  (new — Resend integration)
 ```
 
@@ -288,7 +292,7 @@ Fullscreen scroll-driven video scrub gallery. The interaction model is "drag thr
 
 - Each video clip occupies a **scroll region taller than the viewport** — approximately 3-5x viewport height per 6-second clip. This provides a smooth frame-to-pixel scrub ratio. Starting recommendation: **4x viewport height** per clip, tuned during build.
 - As the user scrolls down within a clip's scroll region, JavaScript maps the scroll position to `video.currentTime`, scrubbing through the clip frame by frame.
-- **On finger release (mobile) or scroll stop (desktop):** The view snaps forward to the top of the next video's scroll region. No mid-clip parking — every clip resolves itself.
+- **On finger release (mobile) or scroll stop (desktop):** The view snaps to the nearest clip boundary — forward if past the halfway point, backward if before it (see Snap Behavior below). No mid-clip parking — every clip resolves itself.
 - **On scroll up:** The view snaps backward to the top of the previous clip's scroll region. The previous clip is ready to be scrubbed forward again on the next downward scroll. No reverse playback.
 - The mechanic is identical on mobile and desktop — touch drives it on mobile, trackpad/mouse wheel drives it on desktop.
 
@@ -375,6 +379,8 @@ This is the existing booking form. The current LSP v1.0 `BookingForm.tsx` functi
   - In-person: `Format: In-Person`
   - Virtual: `Format: Virtual (FaceTime)` or `Format: Virtual (WhatsApp)`
 
+**Note on field placement:** `meet_greet_format` and `meet_greet_platform` are booking-level decisions placed on `DogEntry` for implementation simplicity. This is acceptable in LSP v2.0 because Meet & Greet is always a single-dog submission. If multi-dog M&G is ever supported, these fields should move to `BookingPayload`.
+
 **Pipeline change (scoped):** `buildDescription()` in `calendar.ts` adds a `Format:` line for Meet & Greet events. No other description lines change.
 
 **Type change (scoped):** `DogEntry` in `types.ts` gains two optional fields:
@@ -419,7 +425,8 @@ meet_greet_platform?: 'facetime' | 'whatsapp' | '';
 
 **Data flow:**
 - On submission, `Terms accepted: Yes` is appended to the calendar event description by `calendar.ts`.
-- A `terms_accepted: boolean` field is added to `BookingPayload` (or the description builder checks a flag).
+- A `terms_accepted: boolean` field is added to `BookingPayload`.
+- **Server-side validation:** `/api/book` must reject the submission with HTTP 400 if `terms_accepted` is not `true`. The client-side checkbox gate is a UX convenience; the server-side check is the enforcement layer.
 
 **Pipeline change (scoped):** `buildDescription()` in `calendar.ts` adds `Terms accepted: Yes` as the last line of the description for all booking events (all service types).
 
@@ -528,11 +535,11 @@ Contact information page with direct communication options and a message form.
 }
 ```
 
-**Backend behavior:** The `/api/contact` route sends the message to `bookings@thepuppad.com` via Resend. Uses the existing `RESEND_API_KEY` environment variable. No new env vars needed.
+**Backend behavior:** The `/api/contact` route sends the message to the operator via Resend, reading from `process.env.OPERATOR_EMAIL` with `bookings@thepuppad.com` as fallback. Uses the existing `RESEND_API_KEY` environment variable. No new env vars needed — `OPERATOR_EMAIL` is already configured.
 
 **Email sent to operator:**
 - From: `ThePupPad <bookings@thepuppad.com>`
-- To: `bookings@thepuppad.com`
+- To: `process.env.OPERATOR_EMAIL` (fallback: `bookings@thepuppad.com`)
 - Subject: `Contact Form: [name]`
 - Body: Plain text with name, email, and message content. Includes a `Reply-To` header set to the submitter's email address so Dave can reply directly.
 
@@ -692,7 +699,7 @@ puppad-bridge-form/
     │   │   └── page.tsx                    (Contact route `/contact`)
     │   └── api/
     │       ├── book/
-    │       │   └── route.ts                (existing — frozen)
+    │       │   └── route.ts                (existing — frozen with 3 scoped additions)
     │       └── contact/
     │           └── route.ts                (new — contact form handler)
     ├── components/
@@ -830,7 +837,7 @@ All buttons are **pill-shaped** (`border-radius: 999px`). No sharp corners anywh
 ### Viewport
 
 - Use `100svh` (small viewport height), not `100vh`. This prevents the address bar on mobile from causing layout jumps.
-- `<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">` (carried from v1.0)
+- `<meta name="viewport" content="width=device-width, initial-scale=1">`
 
 ### Touch Targets
 
@@ -848,6 +855,7 @@ All buttons are **pill-shaped** (`border-radius: 999px`). No sharp corners anywh
 - `-webkit-tap-highlight-color: transparent` on all interactive elements
 - Focus styles: gold outline (`outline: 2px solid #FFCA4B`) for keyboard navigation
 - Color contrast: warm plum on white/cream backgrounds passes WCAG AA
+- Pinch-to-zoom is permitted (no `maximum-scale` or `user-scalable` restrictions)
 
 ### Bottom Nav Spacing
 
@@ -901,13 +909,13 @@ All buttons are **pill-shaped** (`border-radius: 999px`). No sharp corners anywh
 ### Backend Boundary
 
 - **No new backend dependencies** except the `/api/contact` route.
-- `/api/contact` uses the existing Resend integration (`RESEND_API_KEY`). No new third-party services.
+- `/api/contact` uses the existing Resend integration (`RESEND_API_KEY`) and reads the recipient from `OPERATOR_EMAIL`. No new third-party services.
 - Google Calendar API + Resend remain the **only** external services.
-- The existing `/api/book` route is **frozen** — no changes to its request/response contract, validation logic, or error handling.
-- `email.ts` is **frozen** — no changes to confirmation or alert email content/logic.
-- `calendar.ts` receives **two scoped additions only:**
+- The existing `/api/book` route is **frozen** — no changes to its request/response contract or error handling, with **three scoped additions:**
   1. `buildDescription()` includes `Format: [In-Person | Virtual (FaceTime) | Virtual (WhatsApp)]` for Meet & Greet events.
   2. `buildDescription()` includes `Terms accepted: Yes` for all events.
+  3. Request validation rejects submissions where `terms_accepted` is not `true` (HTTP 400).
+- `email.ts` is **frozen** — no changes to confirmation or alert email content/logic.
 
 ### No Auth
 
@@ -953,7 +961,7 @@ Service prices migrate from hardcoded constants in `pricing.ts` to environment v
 
 **Behavior:** `pricing.ts` reads from `process.env` with `parseFloat()` and falls back to the current hardcoded values if the env var is missing or not a valid number. The app never breaks if an env var is absent.
 
-**Note on client components:** `pricing.ts` values are used in `BookingForm.tsx`, which is a client component (`'use client'`). Client components cannot read `process.env` at runtime. The prices must be passed as props from a server component (the `/bookings` page), or `pricing.ts` must use `NEXT_PUBLIC_` prefixed variables. The implementation should determine the cleanest approach — either server-side prop passing or public env vars. Server-side prop passing is preferred to avoid exposing pricing env vars to the client bundle.
+**Pricing delivery to client components:** `pricing.ts` values are used in `BookingForm.tsx`, which is a client component (`'use client'`). Client components cannot read `process.env` at runtime. Pricing is resolved server-side: the `/bookings` page (a server component) reads `pricing.ts` and passes prices as props to `BookingForm.tsx`. `NEXT_PUBLIC_` prefixed variables are **not used** for pricing — prices stay out of the client bundle.
 
 ### Type Additions (Scoped)
 
@@ -984,7 +992,7 @@ These are the only type changes. All existing fields and interfaces remain uncha
 | `GOOGLE_PRIVATE_KEY` | GCP private key (must contain actual newlines in Vercel) |
 | `GOOGLE_CALENDAR_ID` | Boarding & Daycare calendar ID |
 | `RESEND_API_KEY` | Resend API key for transactional email |
-| `OPERATOR_EMAIL` | Dave's email for booking alert notifications |
+| `OPERATOR_EMAIL` | Dave's email for booking alert notifications and contact form recipient |
 | `ENABLE_NOTIFICATIONS` | Feature flag for calendar email notifications (true/false) |
 
 ### New — Pricing
@@ -1005,7 +1013,7 @@ These are the only type changes. All existing fields and interfaces remain uncha
 
 ### New — Contact Form
 
-No additional environment variables needed. The contact form API route uses the existing `RESEND_API_KEY` and sends to a hardcoded recipient (`bookings@thepuppad.com`).
+No additional environment variables needed. The contact form API route uses the existing `RESEND_API_KEY` and reads the recipient from `OPERATOR_EMAIL` (fallback: `bookings@thepuppad.com`).
 
 ### .env.local.example Update
 
@@ -1054,7 +1062,7 @@ The v2.0 migration decomposes this into named components:
    - Build `TermsAgreement.tsx` (scroll-to-bottom + checkbox gate)
    - Add service collapse behavior to service selection section
    - Add Meet & Greet format/platform picker
-10. Apply two scoped pipeline changes in `calendar.ts` and `types.ts`
+10. Apply three scoped pipeline changes in `calendar.ts`, `types.ts`, and `/api/book` validation
 
 **Phase 4: Static Pages**
 11. Build `src/app/services/page.tsx` with `ServiceCatalog.tsx`
@@ -1073,8 +1081,8 @@ The v2.0 migration decomposes this into named components:
 
 ### Critical Constraints During Decomposition
 
-- `BookingForm.tsx` changes are limited to: (a) removing the hero section content, and (b) implementing the five defined UI improvements.
-- No other cleanup, refactoring, or improvement to `BookingForm.tsx`.
+- Component extraction and structural decomposition are planned and required (hero extraction, new standalone components, AppShell creation). This is organizational restructuring, not logic refactoring.
+- **Logic refactoring is blocked** except for the five defined UI improvements. This means: do not change how data flows, how validation works, or how the cart calculates unless it is part of one of the five listed changes.
 - If a piece of form logic is not listed in the five changes, it is not touched.
 - All existing design tokens (`T` object), helper functions (`createDog`, `buildCart`, `nextDogId`), sub-components (`SectionLabel`, `GoldDivider`, `FormField`, `ServiceCard`), and the `NJ_TAX_RATE` constant remain in `BookingForm.tsx` unless they are moved to shared modules for reuse — but only if a new route actually needs them.
 
@@ -1103,7 +1111,7 @@ The following assets must exist in the repo before the build can proceed. They a
 
 All SVGs must use `currentColor` for their fill values (not hardcoded hex colors). This allows CSS to control the fill color for active/inactive states and the logo's white/plum color switch.
 
-**Verification before build:** Check that `public/logo.svg` and all `public/icons/*.svg` files use `currentColor` or have no baked-in fill colors. If fills are baked in, they must be replaced with `currentColor` before the build proceeds.
+**Verified 2026-03-27:** All SVGs (`public/logo.svg` and all `public/icons/*.svg`) had hardcoded `fill="#3E363F"`. Replaced with `fill="currentColor"` and committed to `terrier` branch. Duplicate `public/icons/logo.svg` removed — canonical logo location is `public/logo.svg` only. No further action needed.
 
 ### Build Blockers
 
@@ -1153,14 +1161,14 @@ The following items are explicitly **NOT in v2.0 scope**. Do not implement them,
 
 | # | Question | Impact |
 |---|----------|--------|
-| 3 | Is LSP a bridge or a permanent product? | The v2.0 expansion — five routes, team page, gallery, full branding — strongly signals permanence. The comment in `pricing.ts` ("These values are throwaway. When the full QBF ships... this file dies.") may no longer be accurate. This should be acknowledged and the comment updated or removed. |
+| 3 | ~~Is LSP a bridge or a permanent product?~~ **RESOLVED.** | The throwaway comment in `pricing.ts` ("These values are throwaway. When the full QBF ships... this file dies.") exists and contradicts v2.0's expansion toward permanence. **Decision: remove the comment during the build.** `pricing.ts` becomes the env-var-backed pricing reader for LSP as a standalone product. |
 | 4 | What photos for the team cards? | Dave provides. Placed in `public/team/`. Build blocked for this section until provided. |
 | 5 | What video clips for the gallery? | Dave provides. Placed in `public/gallery/`. Build blocked for gallery route until provided. |
 | 6 | What featured review quote for the home page? | Dave selects from Rover reviews. Placeholder until provided. |
 | 7 | Should the contact form have rate limiting or spam protection? | Currently no protection. Resend has built-in rate limits, but the endpoint is open. Consider adding a simple honeypot field or rate limit middleware in a future iteration. |
 | 8 | What is the exact service agreement text? | Dave provides. Hardcoded in `TermsAgreement.tsx`. Build can proceed with placeholder text but the terms gate cannot be meaningfully tested until real text is in place. |
 | 9 | Optimal scroll region height per gallery clip for smooth scrub feel? | Starting recommendation: 4x viewport height for 6-second clips. May require tuning during build. |
-| 10 | Do the existing SVGs in `public/icons/` and `public/logo.svg` use `currentColor` fills? | If fills are baked in as hardcoded hex values, they must be updated before the nav active/inactive color switching will work. Verify before build. |
+| 10 | ~~Do the existing SVGs in `public/icons/` and `public/logo.svg` use `currentColor` fills?~~ **RESOLVED.** | Hardcoded `fill="#3E363F"` replaced with `fill="currentColor"` in all SVGs. Duplicate `public/icons/logo.svg` removed. Committed to `terrier` branch 2026-03-27. |
 | 11 | What are the exact social media URLs for Facebook and TikTok? | Instagram is `instagram.com/thepuppadnj`. Facebook and TikTok URLs need confirmation from Dave. |
 | 12 | Should the desktop layout have a footer, or is the top nav sufficient? | Bottom nav replaces footer on mobile. Desktop may benefit from a minimal footer with contact info and social links. Dave to decide. |
 
