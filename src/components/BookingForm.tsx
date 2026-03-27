@@ -1,8 +1,14 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { SERVICES, ADDONS, SERVICE_OPTIONS, type ServiceKey } from '@/lib/pricing';
+import type { ServiceKey, ServicesMap, AddonsMap, ServiceOption } from '@/lib/pricing';
 import type { BookingPayload, DogEntry, ClientInfo, CartSummary, CartLineItem } from '@/lib/types';
+
+interface BookingFormProps {
+  services: ServicesMap;
+  addons: AddonsMap;
+  serviceOptions: ServiceOption[];
+}
 import StepTracker from './StepTracker';
 import TimePicker from './TimePicker';
 import TermsAgreement from './TermsAgreement';
@@ -46,11 +52,11 @@ function createDog(): DogEntry {
   };
 }
 
-function buildCart(dogs: DogEntry[], pickupService: boolean, dropoffService: boolean): CartSummary & { tax: number; grandTotal: number } {
+function buildCart(dogs: DogEntry[], pickupService: boolean, dropoffService: boolean, services: ServicesMap, addons: AddonsMap): CartSummary & { tax: number; grandTotal: number } {
   const lineItems: CartLineItem[] = dogs
     .filter(d => d.service !== '')
     .map(d => {
-      const svc = SERVICES[d.service as ServiceKey];
+      const svc = services[d.service as ServiceKey];
       let servicePrice = svc.price;
 
       if (d.service === 'boarding' && d.dropoffDate && d.pickupDate) {
@@ -65,13 +71,13 @@ function buildCart(dogs: DogEntry[], pickupService: boolean, dropoffService: boo
         dogName: d.name || 'Unnamed',
         service: svc.label,
         servicePrice,
-        bathPrice: d.bath ? ADDONS.bath.price : 0,
+        bathPrice: d.bath ? addons.bath.price : 0,
       };
     });
 
   const subtotal = lineItems.reduce((sum, li) => sum + li.servicePrice + li.bathPrice, 0);
-  const pickupPrice = pickupService ? ADDONS.pickup.price : 0;
-  const dropoffPrice = dropoffService ? ADDONS.dropoff.price : 0;
+  const pickupPrice = pickupService ? addons.pickup.price : 0;
+  const dropoffPrice = dropoffService ? addons.dropoff.price : 0;
   const total = subtotal + pickupPrice + dropoffPrice;
   const tax = Math.round(total * NJ_TAX_RATE * 100) / 100;
   const grandTotal = Math.round((total + tax) * 100) / 100;
@@ -286,7 +292,7 @@ function PillButton({
 
 /* ── Main Component ── */
 
-export default function BookingForm() {
+export default function BookingForm({ services, addons, serviceOptions }: BookingFormProps) {
   const [client, setClient] = useState<ClientInfo>({ name: '', email: '', phone: '' });
   const [dogs, setDogs] = useState<DogEntry[]>([createDog()]);
   const [pickupService, setPickupService] = useState(false);
@@ -320,7 +326,7 @@ export default function BookingForm() {
     setDogs(prev => [...prev, createDog()]);
   }, []);
 
-  const cart = buildCart(dogs, pickupService, dropoffService);
+  const cart = buildCart(dogs, pickupService, dropoffService, services, addons);
 
   /* Submit */
   const handleSubmit = async () => {
@@ -494,7 +500,7 @@ export default function BookingForm() {
               <div key={dog.id} style={{ marginBottom: dogs.length > 1 ? 24 : 0 }}>
                 {dogs.length > 1 && <SectionLabel>{dog.name || `dog ${idx + 1}`}</SectionLabel>}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 24 }}>
-                  {SERVICE_OPTIONS.map(opt => {
+                  {serviceOptions.map(opt => {
                     const isSelected = dog.service === opt.id;
                     const isCollapsed = !isExpanded && !isSelected;
 
@@ -677,16 +683,16 @@ export default function BookingForm() {
             <ToggleCard
               key={dog.id}
               label={`Bath${dog.name ? ` for ${dog.name}` : ''}`}
-              subtitle={`$${ADDONS.bath.price} per dog`}
-              price={ADDONS.bath.price}
+              subtitle={`$${addons.bath.price} per dog`}
+              price={addons.bath.price}
               checked={dog.bath}
               onToggle={() => updateDog(idx, 'bath', !dog.bath)}
             />
           ))}
           <div style={{ height: 1, background: T.cream, margin: '24px 0' }} />
           <SectionLabel>per booking</SectionLabel>
-          <ToggleCard label="Pickup" subtitle={`$${ADDONS.pickup.price} per booking`} price={ADDONS.pickup.price} checked={pickupService} onToggle={() => setPickupService(p => !p)} />
-          <ToggleCard label="Dropoff" subtitle={`$${ADDONS.dropoff.price} per booking`} price={ADDONS.dropoff.price} checked={dropoffService} onToggle={() => setDropoffService(p => !p)} />
+          <ToggleCard label="Pickup" subtitle={`$${addons.pickup.price} per booking`} price={addons.pickup.price} checked={pickupService} onToggle={() => setPickupService(p => !p)} />
+          <ToggleCard label="Dropoff" subtitle={`$${addons.dropoff.price} per booking`} price={addons.dropoff.price} checked={dropoffService} onToggle={() => setDropoffService(p => !p)} />
         </div>
 
         <GoldDivider />

@@ -1101,7 +1101,7 @@ The following assets must exist in the repo before the build can proceed. They a
 | Bookings nav icon | Owner's PNG | PNG -> SVG | `public/icons/bookings.svg` | **In repo** |
 | Contact nav icon | Owner's PNG | PNG -> SVG | `public/icons/contact.svg` | **In repo** |
 | Team photos (4) | Owner provides | None (use as-is) | `public/team/` | **Not yet provided** |
-| Gallery video clips | Owner provides | None (use as-is) | `public/gallery/` | **Not yet provided** |
+| Gallery video clips | Owner provides | None (use as-is) | `public/gallery/` | **In repo** (`clip-01.mp4` through `clip-07.mp4`) |
 | Hero video | Already in repo | None | `public/hero-video.mp4` | **In repo** (v1.0 asset) |
 | Facility photo band | Owner provides | None (use as-is) | `public/` | **Not yet provided** |
 | Featured review quote | Owner selects from Rover | Text only | Hardcoded in component | **Not yet provided** |
@@ -1117,7 +1117,6 @@ All SVGs must use `currentColor` for their fill values (not hardcoded hex colors
 
 The build **cannot fully complete** without:
 - Team photos in `public/team/` (the Meet Our Team section will have empty image slots)
-- Gallery video clips in `public/gallery/` (the gallery page will have no content)
 - Featured review quote text (the review section will need a placeholder)
 - Service agreement text (the terms agreement gate will need placeholder text)
 

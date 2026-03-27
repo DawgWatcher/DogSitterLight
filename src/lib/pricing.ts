@@ -1,17 +1,16 @@
-// =============================================================
-// BRIDGE FORM — HARDCODED PRICING
-// These values are throwaway. When the full QBF ships with
-// Airtable as the pricing source of truth, this file dies.
-// =============================================================
+function envPrice(key: string, fallback: number): number {
+  const parsed = parseFloat(process.env[key] ?? '');
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
 
 export const SERVICES = {
   boarding: {
     label: "Boarding",
     description: "Kennel-free overnight care — 24hr rate",
-    price: 60,
+    price: envPrice('PRICE_BOARDING', 60),
     unit: "per 24 hours",
     hasOverage: true,
-    overageRate: 2.5,
+    overageRate: envPrice('PRICE_BOARDING_OVERAGE', 2.5),
     overageUnit: "per hour",
     needsDropoffPickupTimes: true,
     needsDateRange: true,
@@ -19,7 +18,7 @@ export const SERVICES = {
   daycare: {
     label: "Daycare",
     description: "Kennel-free daytime care",
-    price: 45,
+    price: envPrice('PRICE_DAYCARE', 45),
     unit: "flat rate",
     hasOverage: false,
     needsDropoffPickupTimes: true,
@@ -28,7 +27,7 @@ export const SERVICES = {
   walking_30: {
     label: "Dog Walking — 30 min",
     description: "30-minute neighborhood walk",
-    price: 25,
+    price: envPrice('PRICE_WALK_30', 25),
     unit: "per walk",
     hasOverage: false,
     durationMinutes: 30,
@@ -38,7 +37,7 @@ export const SERVICES = {
   walking_60: {
     label: "Dog Walking — 60 min",
     description: "60-minute neighborhood walk",
-    price: 45,
+    price: envPrice('PRICE_WALK_60', 45),
     unit: "per walk",
     hasOverage: false,
     durationMinutes: 60,
@@ -48,7 +47,7 @@ export const SERVICES = {
   inhome_30: {
     label: "In-Home Visit — 30 min",
     description: "30-minute home check-in, feeding, and potty break",
-    price: 30,
+    price: envPrice('PRICE_VISIT_30', 30),
     unit: "per visit",
     hasOverage: false,
     durationMinutes: 30,
@@ -58,7 +57,7 @@ export const SERVICES = {
   inhome_60: {
     label: "In-Home Visit — 60 min",
     description: "60-minute home visit with walk and care",
-    price: 50,
+    price: envPrice('PRICE_VISIT_60', 50),
     unit: "per visit",
     hasOverage: false,
     durationMinutes: 60,
@@ -68,38 +67,41 @@ export const SERVICES = {
   meet_greet: {
     label: "Meet & Greet",
     description: "Free introductory visit — get to know each other",
-    price: 0,
+    price: envPrice('PRICE_MEET_GREET', 0),
     unit: "free",
     hasOverage: false,
     durationMinutes: 30,
     needsDropoffPickupTimes: false,
     needsDateRange: false,
   },
-} as const;
+};
 
 export const ADDONS = {
   bath: {
     label: "Bath",
-    price: 20,
+    price: envPrice('PRICE_BATH', 20),
     unit: "per dog",
     perDog: true,
   },
   pickup: {
     label: "Pickup",
-    price: 25,
+    price: envPrice('PRICE_PICKUP', 25),
     unit: "per booking",
     perDog: false,
   },
   dropoff: {
     label: "Dropoff",
-    price: 25,
+    price: envPrice('PRICE_DROPOFF', 25),
     unit: "per booking",
     perDog: false,
   },
-} as const;
+};
 
 export type ServiceKey = keyof typeof SERVICES;
 export type AddonKey = keyof typeof ADDONS;
+
+export type ServicesMap = typeof SERVICES;
+export type AddonsMap = typeof ADDONS;
 
 /* ── Form-friendly list (BookingForm only — route.ts/calendar.ts don't use these) ── */
 export interface ServiceOption {
