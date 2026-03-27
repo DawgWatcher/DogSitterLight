@@ -23,6 +23,13 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (payload.terms_accepted !== true) {
+      return NextResponse.json(
+        { error: "Terms must be accepted" },
+        { status: 400 }
+      );
+    }
+
     const eventIds = await createBookingEvents(payload);
 
     // Best-effort email notifications — never block the booking response

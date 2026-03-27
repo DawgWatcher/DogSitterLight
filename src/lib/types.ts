@@ -22,6 +22,9 @@ export interface DogEntry {
   // Walking / In-Home / M&G fields
   appointmentDate: string;
   appointmentTime: string;
+  // Meet & Greet fields
+  meet_greet_format?: 'in-person' | 'virtual' | '';
+  meet_greet_platform?: 'facetime' | 'whatsapp' | '';
   // Upsells
   bath: boolean;
 }
@@ -54,4 +57,5 @@ export interface BookingPayload {
   pickupService: boolean;
   dropoffService: boolean;
   cart: CartSummary;
+  terms_accepted: boolean;
 }

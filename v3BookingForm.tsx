@@ -485,6 +485,7 @@ export default function BookingForm() {
         pickupService,
         dropoffService,
         cart,
+        terms_accepted: true,
       };
       const res = await fetch('/api/book', {
         method: 'POST',

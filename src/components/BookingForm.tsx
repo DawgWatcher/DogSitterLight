@@ -1,8 +1,11 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { SERVICES, ADDONS, SERVICE_OPTIONS, type ServiceKey } from '@/lib/pricing';
 import type { BookingPayload, DogEntry, ClientInfo, CartSummary, CartLineItem } from '@/lib/types';
+import StepTracker from './StepTracker';
+import TimePicker from './TimePicker';
+import TermsAgreement from './TermsAgreement';
 
 /* ── Design Tokens (60/30/10) ── */
 const T = {
@@ -16,14 +19,6 @@ const T = {
 } as const;
 
 const NJ_TAX_RATE = 0.06625;
-
-const SECTIONS = [
-  { id: 'you', label: 'you' },
-  { id: 'dog', label: 'dog' },
-  { id: 'service', label: 'service' },
-  { id: 'extras', label: 'extras' },
-  { id: 'review', label: 'review' },
-] as const;
 
 /* ── Helpers ── */
 
@@ -82,6 +77,16 @@ function buildCart(dogs: DogEntry[], pickupService: boolean, dropoffService: boo
   const grandTotal = Math.round((total + tax) * 100) / 100;
 
   return { lineItems, subtotal, pickupPrice, dropoffPrice, total, tax, grandTotal };
+}
+
+function formatTime12(time24: string): string {
+  if (!time24) return '';
+  const [hStr, mStr] = time24.split(':');
+  let h = parseInt(hStr, 10);
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  if (h === 0) h = 12;
+  else if (h > 12) h -= 12;
+  return `${h}:${mStr} ${ampm}`;
 }
 
 /* ── Primitives ── */
@@ -214,34 +219,68 @@ function ToggleCard({
   );
 }
 
-function ProgressNav({ activeIndex, scrollPercent }: { activeIndex: number; scrollPercent: number }) {
+/* ── Time Field (replaces input type="time") ── */
+
+function TimeField({
+  label, value, onChange, onCream = false,
+  pickerId, openPicker, setOpenPicker,
+}: {
+  label: string; value: string; onChange: (val: string) => void; onCream?: boolean;
+  pickerId: string; openPicker: string | null; setOpenPicker: (id: string | null) => void;
+}) {
+  const isOpen = openPicker === pickerId;
   return (
-    <div style={{
-      flexShrink: 0, background: T.white, padding: '0 24px 12px',
-      borderBottom: `1px solid ${T.cream}`,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
-        <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 2, background: T.cream, transform: 'translateY(-50%)', borderRadius: 1 }} />
-        <div style={{ position: 'absolute', top: '50%', left: 0, height: 2, background: T.gold, transform: 'translateY(-50%)', borderRadius: 1, width: `${scrollPercent}%`, transition: 'width 0.3s ease' }} />
-        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', position: 'relative', zIndex: 2 }}>
-          {SECTIONS.map((s, i) => (
-            <div key={s.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                width: 10, height: 10, borderRadius: '50%', transition: 'all 0.3s',
-                background: i <= activeIndex ? T.gold : T.white,
-                border: `2px solid ${i <= activeIndex ? T.gold : T.cream}`,
-                boxShadow: i === activeIndex ? '0 0 0 3px rgba(255,202,75,0.25)' : 'none',
-              }} />
-              <span style={{
-                fontSize: 9, fontFamily: 'Nunito, sans-serif', fontWeight: 600, whiteSpace: 'nowrap',
-                color: i <= activeIndex ? T.plum : T.light,
-                transition: 'color 0.3s',
-              }}>{s.label}</span>
-            </div>
-          ))}
-        </div>
+    <div style={{ marginBottom: 16 }}>
+      <label style={{ display: 'block', fontSize: 12, fontFamily: 'Nunito, sans-serif', fontWeight: 600, color: T.muted, marginBottom: 6 }}>
+        {label}
+      </label>
+      <div
+        onClick={() => setOpenPicker(isOpen ? null : pickerId)}
+        style={{
+          width: '100%', height: 46, borderRadius: 10,
+          border: `1.5px solid ${isOpen ? T.gold : onCream ? T.border : T.cream}`,
+          background: T.white, padding: '0 14px', fontSize: 15,
+          color: value ? T.plum : T.muted,
+          display: 'flex', alignItems: 'center',
+          cursor: 'pointer', transition: 'border-color 0.2s',
+          boxSizing: 'border-box' as const,
+        }}
+      >
+        {value ? formatTime12(value) : 'Select time'}
       </div>
+      {isOpen && (
+        <TimePicker
+          value={value || '09:00'}
+          onChange={onChange}
+          onClose={() => setOpenPicker(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/* ── M&G Pill Button ── */
+
+function PillButton({
+  label, selected, onClick,
+}: {
+  label: string; selected: boolean; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        flex: 1, height: 42, borderRadius: 999,
+        border: selected ? `2px solid ${T.gold}` : `1.5px solid ${T.light}`,
+        background: selected ? T.gold : T.white,
+        color: T.plum, fontFamily: 'Nunito, sans-serif',
+        fontWeight: selected ? 700 : 500, fontSize: 14,
+        cursor: 'pointer', transition: 'all 0.15s',
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -255,14 +294,26 @@ export default function BookingForm() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState(0);
-  const [scrollPct, setScrollPct] = useState(0);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [serviceExpanded, setServiceExpanded] = useState<Record<string, boolean>>({});
+  const [openTimePicker, setOpenTimePicker] = useState<string | null>(null);
   const sectionRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const rafRef = useRef<number>(0);
 
   const updateDog = useCallback((idx: number, field: keyof DogEntry, value: string | boolean) => {
     setDogs(prev => prev.map((d, i) => i === idx ? { ...d, [field]: value } : d));
+  }, []);
+
+  const selectService = useCallback((dogId: string, idx: number, serviceId: string) => {
+    setDogs(prev => prev.map((d, i) => {
+      if (i !== idx) return d;
+      const updated: DogEntry = { ...d, service: serviceId as ServiceKey | '' };
+      if (serviceId !== 'meet_greet') {
+        updated.meet_greet_format = '';
+        updated.meet_greet_platform = '';
+      }
+      return updated;
+    }));
+    setServiceExpanded(prev => ({ ...prev, [dogId]: false }));
   }, []);
 
   const addDog = useCallback(() => {
@@ -271,45 +322,10 @@ export default function BookingForm() {
 
   const cart = buildCart(dogs, pickupService, dropoffService);
 
-  /* Scroll handler — progress bar + section tracking via rAF */
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const onScroll = () => {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(() => {
-        const st = el.scrollTop;
-
-        // Progress bar + section tracking
-        const formHeight = el.scrollHeight - el.clientHeight;
-        setScrollPct(formHeight > 0 ? Math.min((st / formHeight) * 100, 100) : 0);
-
-        const viewMid = el.clientHeight * 0.35;
-        let cur = 0;
-        for (let i = sectionRefs.current.length - 1; i >= 0; i--) {
-          const ref = sectionRefs.current[i];
-          if (ref && ref.getBoundingClientRect().top - el.getBoundingClientRect().top < viewMid) {
-            cur = i;
-            break;
-          }
-        }
-        setActiveSection(cur);
-      });
-    };
-
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => {
-      el.removeEventListener('scroll', onScroll);
-      cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
   /* Submit */
   const handleSubmit = async () => {
     setError(null);
 
-    // Validate required date/time fields per dog
     const missing: string[] = [];
     for (let i = 0; i < dogs.length; i++) {
       const dog = dogs[i];
@@ -318,6 +334,13 @@ export default function BookingForm() {
       if (!dog.service) {
         missing.push(`${label}: please select a service`);
         continue;
+      }
+
+      if (dog.service === 'meet_greet') {
+        if (!dog.meet_greet_format) missing.push(`${label}: please select a format (in-person or virtual)`);
+        if (dog.meet_greet_format === 'virtual' && !dog.meet_greet_platform) {
+          missing.push(`${label}: please select a platform (FaceTime or WhatsApp)`);
+        }
       }
 
       if (dog.service === 'boarding') {
@@ -348,6 +371,7 @@ export default function BookingForm() {
         pickupService,
         dropoffService,
         cart,
+        terms_accepted: termsAccepted,
       };
       const res = await fetch('/api/book', {
         method: 'POST',
@@ -401,232 +425,351 @@ export default function BookingForm() {
     );
   }
 
+  const submitDisabled = submitting || !termsAccepted;
+
   /* ── Form ── */
   return (
-    <div style={{
-      maxWidth: 480, margin: '0 auto', minHeight: '100vh',
-      background: T.white, display: 'flex', flexDirection: 'column',
-    }}>
-      <ProgressNav activeIndex={activeSection} scrollPercent={scrollPct} />
+    <div style={{ maxWidth: 480, margin: '0 auto', background: T.white }}>
+      <StepTracker sectionRefs={sectionRefs} />
 
-      {/* Scrollable content */}
-      <div ref={scrollRef} className="scroll-hide" style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div style={{ padding: '28px 24px 28px' }}>
 
-        {/* ── Form Sections ── */}
-        <div style={{ padding: '28px 24px 28px' }}>
+        {/* ── Section 1: Client ── */}
+        <div ref={el => { sectionRefs.current[0] = el; }} style={{ marginBottom: 8 }}>
+          <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
+            Your information
+          </h2>
+          <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>We&apos;ll use this to confirm your booking</p>
+          <SectionLabel>contact</SectionLabel>
+          <FormField label="Full name" placeholder="Jane Smith" value={client.name} onChange={v => setClient(p => ({ ...p, name: v }))} />
+          <FormField label="Email" placeholder="jane@email.com" type="email" value={client.email} onChange={v => setClient(p => ({ ...p, email: v }))} />
+          <FormField label="Phone" placeholder="(555) 123-4567" type="tel" value={client.phone} onChange={v => setClient(p => ({ ...p, phone: v }))} />
+        </div>
 
-          {/* ── Section 1: Client ── */}
-          <div ref={el => { sectionRefs.current[0] = el; }} style={{ marginBottom: 8 }}>
-            <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
-              Your information
-            </h2>
-            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>We&apos;ll use this to confirm your booking</p>
-            <SectionLabel>contact</SectionLabel>
-            <FormField label="Full name" placeholder="Jane Smith" value={client.name} onChange={v => setClient(p => ({ ...p, name: v }))} />
-            <FormField label="Email" placeholder="jane@email.com" type="email" value={client.email} onChange={v => setClient(p => ({ ...p, email: v }))} />
-            <FormField label="Phone" placeholder="(555) 123-4567" type="tel" value={client.phone} onChange={v => setClient(p => ({ ...p, phone: v }))} />
-          </div>
+        <GoldDivider />
 
-          <GoldDivider />
-
-          {/* ── Section 2: Dogs ── */}
-          <div ref={el => { sectionRefs.current[1] = el; }} style={{ marginBottom: 8 }}>
-            <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
-              Your dog(s)
-            </h2>
-            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Tell us about your furry family</p>
-            {dogs.map((dog, idx) => (
-              <div key={dog.id} style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <SectionLabel>dog {idx + 1}</SectionLabel>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.gold }} />
-                </div>
-                <FormField label="Dog name" placeholder="Buddy" onCream value={dog.name} onChange={v => updateDog(idx, 'name', v)} />
+        {/* ── Section 2: Dogs ── */}
+        <div ref={el => { sectionRefs.current[1] = el; }} style={{ marginBottom: 8 }}>
+          <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
+            Your dog(s)
+          </h2>
+          <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Tell us about your furry family</p>
+          {dogs.map((dog, idx) => (
+            <div key={dog.id} style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <SectionLabel>dog {idx + 1}</SectionLabel>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: T.gold }} />
               </div>
-            ))}
-            <button
-              onClick={addDog}
-              type="button"
-              style={{
-                width: '100%', height: 44, borderRadius: 10,
-                border: `1.5px dashed ${T.light}`, background: 'transparent',
-                color: T.muted, fontSize: 13, fontFamily: 'Nunito, sans-serif', fontWeight: 600, cursor: 'pointer',
-              }}
-            >+ add another dog</button>
-          </div>
+              <FormField label="Dog name" placeholder="Buddy" onCream value={dog.name} onChange={v => updateDog(idx, 'name', v)} />
+            </div>
+          ))}
+          <button
+            onClick={addDog}
+            type="button"
+            style={{
+              width: '100%', height: 44, borderRadius: 10,
+              border: `1.5px dashed ${T.light}`, background: 'transparent',
+              color: T.muted, fontSize: 13, fontFamily: 'Nunito, sans-serif', fontWeight: 600, cursor: 'pointer',
+            }}
+          >+ add another dog</button>
+        </div>
 
-          <GoldDivider />
+        <GoldDivider />
 
-          {/* ── Section 3: Services ── */}
-          <div ref={el => { sectionRefs.current[2] = el; }} style={{ marginBottom: 8 }}>
-            <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
-              Choose a service
-            </h2>
-            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>
-              {dogs.length === 1
-                ? `Select a service for ${dogs[0].name || 'your dog'}`
-                : 'Select a service per dog'}
-            </p>
+        {/* ── Section 3: Services (B1 collapse + B2 M&G picker) ── */}
+        <div ref={el => { sectionRefs.current[2] = el; }} style={{ marginBottom: 8 }}>
+          <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
+            Choose a service
+          </h2>
+          <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>
+            {dogs.length === 1
+              ? `Select a service for ${dogs[0].name || 'your dog'}`
+              : 'Select a service per dog'}
+          </p>
 
-            {dogs.map((dog, idx) => (
+          {dogs.map((dog, idx) => {
+            const isExpanded = dog.service === '' || !!serviceExpanded[dog.id];
+
+            return (
               <div key={dog.id} style={{ marginBottom: dogs.length > 1 ? 24 : 0 }}>
                 {dogs.length > 1 && <SectionLabel>{dog.name || `dog ${idx + 1}`}</SectionLabel>}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-                  {SERVICE_OPTIONS.map(opt => (
-                    <ServiceCard
-                      key={opt.id}
-                      label={opt.label}
-                      price={opt.price}
-                      unit={opt.unit}
-                      popular={opt.popular}
-                      selected={dog.service === opt.id}
-                      onSelect={() => updateDog(idx, 'service', opt.id)}
-                    />
-                  ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0, marginBottom: 24 }}>
+                  {SERVICE_OPTIONS.map(opt => {
+                    const isSelected = dog.service === opt.id;
+                    const isCollapsed = !isExpanded && !isSelected;
+
+                    return (
+                      <div
+                        key={opt.id}
+                        style={{
+                          maxHeight: isCollapsed ? 0 : 80,
+                          opacity: isCollapsed ? 0 : 1,
+                          overflow: 'hidden',
+                          marginBottom: isCollapsed ? 0 : 8,
+                          transition: 'max-height 250ms ease, opacity 250ms ease, margin-bottom 250ms ease',
+                        }}
+                      >
+                        <ServiceCard
+                          label={opt.label}
+                          price={opt.price}
+                          unit={opt.unit}
+                          popular={opt.popular}
+                          selected={isSelected}
+                          onSelect={() => {
+                            if (isSelected) {
+                              setServiceExpanded(prev => ({ ...prev, [dog.id]: !isExpanded }));
+                            } else {
+                              selectService(dog.id, idx, opt.id);
+                            }
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+
+                  {/* Change Service link */}
+                  {dog.service !== '' && !isExpanded && (
+                    <button
+                      type="button"
+                      onClick={() => setServiceExpanded(prev => ({ ...prev, [dog.id]: true }))}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer',
+                        color: T.gold, fontSize: 13, fontFamily: 'Nunito, sans-serif',
+                        fontWeight: 600, padding: '4px 0', textAlign: 'left',
+                      }}
+                    >
+                      Change Service
+                    </button>
+                  )}
                 </div>
 
+                {/* B2: Meet & Greet format/platform picker */}
+                {dog.service === 'meet_greet' && (
+                  <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
+                    <SectionLabel>format</SectionLabel>
+                    <div style={{ display: 'flex', gap: 10, marginBottom: dog.meet_greet_format === 'virtual' ? 16 : 0 }}>
+                      <PillButton
+                        label="In-Person"
+                        selected={dog.meet_greet_format === 'in-person'}
+                        onClick={() => {
+                          updateDog(idx, 'meet_greet_format', 'in-person');
+                          updateDog(idx, 'meet_greet_platform', '');
+                        }}
+                      />
+                      <PillButton
+                        label="Virtual"
+                        selected={dog.meet_greet_format === 'virtual'}
+                        onClick={() => updateDog(idx, 'meet_greet_format', 'virtual')}
+                      />
+                    </div>
+                    {dog.meet_greet_format === 'virtual' && (
+                      <>
+                        <SectionLabel>platform</SectionLabel>
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          <PillButton
+                            label="FaceTime"
+                            selected={dog.meet_greet_platform === 'facetime'}
+                            onClick={() => updateDog(idx, 'meet_greet_platform', 'facetime')}
+                          />
+                          <PillButton
+                            label="WhatsApp"
+                            selected={dog.meet_greet_platform === 'whatsapp'}
+                            onClick={() => updateDog(idx, 'meet_greet_platform', 'whatsapp')}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Boarding date/time fields */}
                 {dog.service === 'boarding' && (
                   <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
                     <SectionLabel>boarding dates</SectionLabel>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
                       <FormField label="Drop-off date" placeholder="" type="date" onCream required value={dog.dropoffDate} onChange={v => updateDog(idx, 'dropoffDate', v)} />
-                      <FormField label="Drop-off time" placeholder="" type="time" onCream required value={dog.dropoffTime} onChange={v => updateDog(idx, 'dropoffTime', v)} />
+                      <TimeField
+                        label="Drop-off time"
+                        value={dog.dropoffTime}
+                        onChange={v => updateDog(idx, 'dropoffTime', v)}
+                        onCream
+                        pickerId={`${idx}-dropoffTime`}
+                        openPicker={openTimePicker}
+                        setOpenPicker={setOpenTimePicker}
+                      />
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                       <FormField label="Pickup date" placeholder="" type="date" onCream required value={dog.pickupDate} onChange={v => updateDog(idx, 'pickupDate', v)} />
-                      <FormField label="Pickup time" placeholder="" type="time" onCream required value={dog.pickupTime} onChange={v => updateDog(idx, 'pickupTime', v)} />
+                      <TimeField
+                        label="Pickup time"
+                        value={dog.pickupTime}
+                        onChange={v => updateDog(idx, 'pickupTime', v)}
+                        onCream
+                        pickerId={`${idx}-pickupTime`}
+                        openPicker={openTimePicker}
+                        setOpenPicker={setOpenTimePicker}
+                      />
                     </div>
                   </div>
                 )}
 
+                {/* Daycare date/time fields */}
                 {dog.service === 'daycare' && (
                   <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
                     <SectionLabel>daycare times</SectionLabel>
                     <FormField label="Date" placeholder="" type="date" onCream required value={dog.daycareDate} onChange={v => updateDog(idx, 'daycareDate', v)} />
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <FormField label="Drop-off time" placeholder="" type="time" onCream required value={dog.daycareDropoffTime} onChange={v => updateDog(idx, 'daycareDropoffTime', v)} />
-                      <FormField label="Pickup time" placeholder="" type="time" onCream required value={dog.daycarePickupTime} onChange={v => updateDog(idx, 'daycarePickupTime', v)} />
+                      <TimeField
+                        label="Drop-off time"
+                        value={dog.daycareDropoffTime}
+                        onChange={v => updateDog(idx, 'daycareDropoffTime', v)}
+                        onCream
+                        pickerId={`${idx}-daycareDropoffTime`}
+                        openPicker={openTimePicker}
+                        setOpenPicker={setOpenTimePicker}
+                      />
+                      <TimeField
+                        label="Pickup time"
+                        value={dog.daycarePickupTime}
+                        onChange={v => updateDog(idx, 'daycarePickupTime', v)}
+                        onCream
+                        pickerId={`${idx}-daycarePickupTime`}
+                        openPicker={openTimePicker}
+                        setOpenPicker={setOpenTimePicker}
+                      />
                     </div>
                   </div>
                 )}
 
+                {/* Appointment date/time fields (walking, in-home, M&G) */}
                 {dog.service !== '' && dog.service !== 'boarding' && dog.service !== 'daycare' && (
                   <div style={{ background: T.cream, borderRadius: 14, padding: 20, marginBottom: 8 }}>
                     <SectionLabel>appointment</SectionLabel>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                       <FormField label="Date" placeholder="" type="date" onCream required value={dog.appointmentDate} onChange={v => updateDog(idx, 'appointmentDate', v)} />
-                      <FormField label="Time" placeholder="" type="time" onCream required value={dog.appointmentTime} onChange={v => updateDog(idx, 'appointmentTime', v)} />
+                      <TimeField
+                        label="Time"
+                        value={dog.appointmentTime}
+                        onChange={v => updateDog(idx, 'appointmentTime', v)}
+                        onCream
+                        pickerId={`${idx}-appointmentTime`}
+                        openPicker={openTimePicker}
+                        setOpenPicker={setOpenTimePicker}
+                      />
                     </div>
                   </div>
                 )}
               </div>
+            );
+          })}
+        </div>
+
+        <GoldDivider />
+
+        {/* ── Section 4: Add-ons ── */}
+        <div ref={el => { sectionRefs.current[3] = el; }} style={{ marginBottom: 8 }}>
+          <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
+            Add-ons
+          </h2>
+          <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Extras to pamper your pup</p>
+          <SectionLabel>per dog</SectionLabel>
+          {dogs.map((dog, idx) => (
+            <ToggleCard
+              key={dog.id}
+              label={`Bath${dog.name ? ` for ${dog.name}` : ''}`}
+              subtitle={`$${ADDONS.bath.price} per dog`}
+              price={ADDONS.bath.price}
+              checked={dog.bath}
+              onToggle={() => updateDog(idx, 'bath', !dog.bath)}
+            />
+          ))}
+          <div style={{ height: 1, background: T.cream, margin: '24px 0' }} />
+          <SectionLabel>per booking</SectionLabel>
+          <ToggleCard label="Pickup" subtitle={`$${ADDONS.pickup.price} per booking`} price={ADDONS.pickup.price} checked={pickupService} onToggle={() => setPickupService(p => !p)} />
+          <ToggleCard label="Dropoff" subtitle={`$${ADDONS.dropoff.price} per booking`} price={ADDONS.dropoff.price} checked={dropoffService} onToggle={() => setDropoffService(p => !p)} />
+        </div>
+
+        <GoldDivider />
+
+        {/* ── Section 5: Review ── */}
+        <div ref={el => { sectionRefs.current[4] = el; }} style={{ marginBottom: 28 }}>
+          <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
+            Review & confirm
+          </h2>
+          <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Everything look right?</p>
+          <div style={{ background: T.cream, borderRadius: 14, padding: 20 }}>
+            <SectionLabel>booking summary</SectionLabel>
+
+            {cart.lineItems.map((li, liIdx) => (
+              <div key={liIdx} style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+                <div style={{
+                  width: 42, height: 42, borderRadius: '50%', background: T.white,
+                  border: `1.5px solid ${T.border}`, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', fontFamily: 'Nunito, sans-serif', fontSize: 17, color: T.plum,
+                }}>
+                  {li.dogName[0].toUpperCase()}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 15, color: T.plum, fontWeight: 500 }}>{li.dogName}</div>
+                  <div style={{ fontSize: 12, color: T.muted }}>{li.service}</div>
+                </div>
+                <div style={{ fontFamily: 'Nunito, sans-serif', fontSize: 18, color: T.plum }}>
+                  {li.servicePrice === 0 ? 'Free' : `$${li.servicePrice}`}
+                </div>
+              </div>
             ))}
-          </div>
 
-          <GoldDivider />
+            {cart.lineItems.length === 0 && (
+              <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>No services selected yet</div>
+            )}
 
-          {/* ── Section 4: Add-ons ── */}
-          <div ref={el => { sectionRefs.current[3] = el; }} style={{ marginBottom: 8 }}>
-            <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
-              Add-ons
-            </h2>
-            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Extras to pamper your pup</p>
-            <SectionLabel>per dog</SectionLabel>
-            {dogs.map((dog, idx) => (
-              <ToggleCard
-                key={dog.id}
-                label={`Bath${dog.name ? ` for ${dog.name}` : ''}`}
-                subtitle={`$${ADDONS.bath.price} per dog`}
-                price={ADDONS.bath.price}
-                checked={dog.bath}
-                onToggle={() => updateDog(idx, 'bath', !dog.bath)}
-              />
+            <div style={{ height: 1, background: T.border, margin: '0 0 12px' }} />
+
+            {cart.lineItems.filter(li => li.bathPrice > 0).map((li, liIdx) => (
+              <div key={liIdx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+                <span style={{ color: T.muted }}>Bath — {li.dogName}</span>
+                <span style={{ color: T.plum }}>${li.bathPrice}</span>
+              </div>
             ))}
-            <div style={{ height: 1, background: T.cream, margin: '24px 0' }} />
-            <SectionLabel>per booking</SectionLabel>
-            <ToggleCard label="Pickup" subtitle={`$${ADDONS.pickup.price} per booking`} price={ADDONS.pickup.price} checked={pickupService} onToggle={() => setPickupService(p => !p)} />
-            <ToggleCard label="Dropoff" subtitle={`$${ADDONS.dropoff.price} per booking`} price={ADDONS.dropoff.price} checked={dropoffService} onToggle={() => setDropoffService(p => !p)} />
-          </div>
-
-          <GoldDivider />
-
-          {/* ── Section 5: Review ── */}
-          <div ref={el => { sectionRefs.current[4] = el; }} style={{ marginBottom: 28 }}>
-            <h2 style={{ fontFamily: 'Nunito, sans-serif', fontSize: 24, color: T.plum, margin: '0 0 6px', fontWeight: 400 }}>
-              Review & confirm
-            </h2>
-            <p style={{ fontSize: 13, color: T.muted, margin: '0 0 20px' }}>Everything look right?</p>
-            <div style={{ background: T.cream, borderRadius: 14, padding: 20 }}>
-              <SectionLabel>booking summary</SectionLabel>
-
-              {cart.lineItems.map((li, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
-                  <div style={{
-                    width: 42, height: 42, borderRadius: '50%', background: T.white,
-                    border: `1.5px solid ${T.border}`, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontFamily: 'Nunito, sans-serif', fontSize: 17, color: T.plum,
-                  }}>
-                    {li.dogName[0].toUpperCase()}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, color: T.plum, fontWeight: 500 }}>{li.dogName}</div>
-                    <div style={{ fontSize: 12, color: T.muted }}>{li.service}</div>
-                  </div>
-                  <div style={{ fontFamily: 'Nunito, sans-serif', fontSize: 18, color: T.plum }}>
-                    {li.servicePrice === 0 ? 'Free' : `$${li.servicePrice}`}
-                  </div>
-                </div>
-              ))}
-
-              {cart.lineItems.length === 0 && (
-                <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>No services selected yet</div>
-              )}
-
-              <div style={{ height: 1, background: T.border, margin: '0 0 12px' }} />
-
-              {cart.lineItems.filter(li => li.bathPrice > 0).map((li, idx) => (
-                <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                  <span style={{ color: T.muted }}>Bath — {li.dogName}</span>
-                  <span style={{ color: T.plum }}>${li.bathPrice}</span>
-                </div>
-              ))}
-              {cart.pickupPrice > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                  <span style={{ color: T.muted }}>Pickup</span>
-                  <span style={{ color: T.plum }}>${cart.pickupPrice}</span>
-                </div>
-              )}
-              {cart.dropoffPrice > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                  <span style={{ color: T.muted }}>Dropoff</span>
-                  <span style={{ color: T.plum }}>${cart.dropoffPrice}</span>
-                </div>
-              )}
-
-              <div style={{ height: 1, background: T.border, margin: '14px 0' }} />
-
+            {cart.pickupPrice > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                <span style={{ color: T.muted }}>Subtotal</span>
-                <span style={{ color: T.plum }}>${cart.total.toFixed(2)}</span>
+                <span style={{ color: T.muted }}>Pickup</span>
+                <span style={{ color: T.plum }}>${cart.pickupPrice}</span>
               </div>
+            )}
+            {cart.dropoffPrice > 0 && (
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
-                <span style={{ color: T.muted }}>NJ Sales Tax (6.625%)</span>
-                <span style={{ color: T.plum }}>${cart.tax.toFixed(2)}</span>
+                <span style={{ color: T.muted }}>Dropoff</span>
+                <span style={{ color: T.plum }}>${cart.dropoffPrice}</span>
               </div>
+            )}
 
-              <div style={{ height: 1, background: T.border, margin: '14px 0' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontSize: 11, fontFamily: 'Nunito, sans-serif', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Total</span>
-                <span style={{ fontFamily: 'Nunito, sans-serif', fontSize: 28, color: T.plum, fontWeight: 400 }}>${cart.grandTotal.toFixed(2)}</span>
-              </div>
+            <div style={{ height: 1, background: T.border, margin: '14px 0' }} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+              <span style={{ color: T.muted }}>Subtotal</span>
+              <span style={{ color: T.plum }}>${cart.total.toFixed(2)}</span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 8 }}>
+              <span style={{ color: T.muted }}>NJ Sales Tax (6.625%)</span>
+              <span style={{ color: T.plum }}>${cart.tax.toFixed(2)}</span>
+            </div>
+
+            <div style={{ height: 1, background: T.border, margin: '14px 0' }} />
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+              <span style={{ fontSize: 11, fontFamily: 'Nunito, sans-serif', fontWeight: 600, color: T.muted, textTransform: 'uppercase', letterSpacing: '0.12em' }}>Total</span>
+              <span style={{ fontFamily: 'Nunito, sans-serif', fontSize: 28, color: T.plum, fontWeight: 400 }}>${cart.grandTotal.toFixed(2)}</span>
             </div>
           </div>
 
+          {/* B4: Terms Agreement Gate */}
+          <TermsAgreement accepted={termsAccepted} onAcceptedChange={setTermsAccepted} />
         </div>
+
       </div>
 
-      {/* Sticky CTA */}
-      <div style={{ flexShrink: 0, padding: '12px 24px 28px', background: T.white, borderTop: `1px solid ${T.cream}` }}>
+      {/* CTA */}
+      <div style={{ padding: '12px 24px 28px', background: T.white, borderTop: `1px solid ${T.cream}` }}>
         {error && (
           <div style={{
             fontSize: 13, color: T.plum, marginBottom: 10, textAlign: 'center',
@@ -636,15 +779,18 @@ export default function BookingForm() {
         )}
         <button
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitDisabled}
           type="button"
           style={{
             width: '100%', height: 52, borderRadius: 999,
             background: T.gold, color: T.plum, fontWeight: 600,
-            fontSize: 15, border: 'none', cursor: submitting ? 'wait' : 'pointer',
+            fontSize: 15, border: 'none',
+            cursor: submitDisabled ? 'not-allowed' : 'pointer',
             boxShadow: '0 2px 12px rgba(255,202,75,0.3)',
             fontFamily: 'Nunito, sans-serif', letterSpacing: '0.02em',
-            opacity: submitting ? 0.6 : 1, transition: 'opacity 0.2s',
+            opacity: submitDisabled ? 0.5 : 1,
+            pointerEvents: submitDisabled ? 'none' : 'auto',
+            transition: 'opacity 0.2s',
           }}
         >
           {submitting ? 'Submitting...' : 'Submit booking'}

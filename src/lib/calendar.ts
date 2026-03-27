@@ -52,6 +52,25 @@ function buildDescription(payload: BookingPayload): string {
   if (payload.cart.dropoffPrice > 0) lines.push(`Dropoff: $${payload.cart.dropoffPrice}`);
   lines.push(`TOTAL: $${payload.cart.total}`);
 
+  // Meet & Greet format line
+  for (const dog of payload.dogs) {
+    if (dog.service === "meet_greet" && dog.meet_greet_format) {
+      lines.push("");
+      if (dog.meet_greet_format === "in-person") {
+        lines.push("Format: In-Person");
+      } else if (dog.meet_greet_format === "virtual" && dog.meet_greet_platform) {
+        const platform = dog.meet_greet_platform === "facetime" ? "FaceTime" : "WhatsApp";
+        lines.push(`Format: Virtual (${platform})`);
+      } else {
+        lines.push("Format: Virtual");
+      }
+    }
+  }
+
+  // Terms acceptance
+  lines.push("");
+  lines.push("Terms accepted: Yes");
+
   return DESCRIPTION_HEADER + lines.join("\n");
 }
 
