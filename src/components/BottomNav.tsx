@@ -16,12 +16,16 @@ const NAV_ITEMS = [
   { label: 'Contact', href: '/contact', Icon: ContactIcon },
 ];
 
-export default function BottomNav() {
+export default function BottomNav({ isGallery = false }: { isGallery?: boolean }) {
   const pathname = usePathname();
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-[rgba(62,54,63,0.1)] md:hidden"
+      className={`fixed bottom-0 left-0 right-0 z-50 md:hidden ${
+        isGallery
+          ? 'bg-white/70 backdrop-blur-sm'
+          : 'bg-white border-t border-[rgba(62,54,63,0.1)]'
+      }`}
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex">
